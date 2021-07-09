@@ -1,0 +1,3 @@
+$(eval $(call addlib_s,liblwip,$(CONFIG_NDPIP)))
+
+LIBNDPIP-SRCS-y += $(LIBNDPIP_BASE)/test.c

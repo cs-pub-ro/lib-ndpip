@@ -1,0 +1,3 @@
+menuconfig LIBNDPIP
+	bool "ndpip - NDP-native TCP/IP stack"
+	default n
