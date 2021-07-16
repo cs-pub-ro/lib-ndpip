@@ -1,3 +1,6 @@
 menuconfig LIBNDPIP
 	bool "ndpip - NDP-native TCP/IP stack"
 	default n
+	select LIBUKALLOCPOOL
+	select LIBUKNETDEV
+	select LIBUKNETDEV_DISPATCHERTHREADS

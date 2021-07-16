@@ -1,0 +1,6 @@
+#ifndef _INCLUDE_NDPIP_SOCKET_H_
+#define _INCLUDE_NDPIP_SOCKET_H_
+
+#define SOCK_NDPIP 42
+
+#endif

@@ -1,3 +1,47 @@
-$(eval $(call addlib_s,liblwip,$(CONFIG_NDPIP)))
+$(eval $(call addlib_s,libndpip,$(CONFIG_LIBNDPIP)))
 
-LIBNDPIP-SRCS-y += $(LIBNDPIP_BASE)/test.c
+MUSL-IMPORTED_BUILD += $(LIBNDPIP_BUILD)/musl-imported
+MUSL-IMPORTED += $(LIBNDPIP_BASE)/musl-imported
+
+LIBNDPIP_COMMON_INCLUDES-y += -I$(MUSL-IMPORTED_BUILD)/include
+LIBNDPIP_COMMON_INCLUDES-y += -I$(MUSL-IMPORTED_BUILD)/arch/$(ARCH)
+
+LIBNDPIP_COMMON_INCLUDES-y += -I$(MUSL-IMPORTED)/include
+LIBNDPIP_COMMON_INCLUDES-y += -I$(MUSL-IMPORTED)/src/internal
+LIBNDPIP_COMMON_INCLUDES-y += -I$(MUSL-IMPORTED)/arch/$(ARCH)
+
+LIBNDPIP_COMMON_INCLUDES-y += -I$(LIBNDPIP_BASE)/src/include
+LIBNDPIP_COMMON_INCLUDES-y += -I$(LIBNDPIP_BASE)/include
+
+LIBNDPIP_CFLAGS += -DNDPIP_UK
+
+CINCLUDES-$(CONFIG_LIBNDPIP) += $(LIBNDPIP_COMMON_INCLUDES-y)
+
+LIBNDPIP_SRCS-y += $(MUSL-IMPORTED)/src/network/ether.c
+LIBNDPIP_SRCS-y += $(MUSL-IMPORTED)/src/network/htons.c
+LIBNDPIP_SRCS-y += $(MUSL-IMPORTED)/src/network/ntohs.c
+LIBNDPIP_SRCS-y += $(MUSL-IMPORTED)/src/network/ntohl.c
+LIBNDPIP_SRCS-y += $(MUSL-IMPORTED)/src/network/inet_aton.c
+
+LIBNDPIP_SRCS-y += $(LIBNDPIP_BASE)/src/socket.c
+LIBNDPIP_SRCS-y += $(LIBNDPIP_BASE)/src/tcp.c
+LIBNDPIP_SRCS-y += $(LIBNDPIP_BASE)/src/util.c
+LIBNDPIP_SRCS-y += $(LIBNDPIP_BASE)/src/uk.c
+
+UK_PREPARE += $(MUSL-IMPORTED_BUILD)/arch/$(ARCH)/bits/alltypes.h
+UK_PREPARE += $(MUSL-IMPORTED_BUILD)/src/internal/version.h
+
+LIBNDPIP_CLEAN += $(MUSL-IMPORTED_BASE)/arch/$(ARCH)/bits/alltypes.h
+LIBNDPIP_CLEAN += $(MUSL-IMPORTED_BASE)/src/internal/version.h
+
+$(MUSL-IMPORTED_BUILD)/arch/$(ARCH)/bits/alltypes.h: $(MUSL-IMPORTED)/tools/mkalltypes.sed $(MUSL-IMPORTED)/arch/$(ARCH)/bits/alltypes.h.in
+	mkdir -p $$(dirname $@) && \
+	sed -f $(MUSL-IMPORTED)/tools/mkalltypes.sed \
+		$(MUSL-IMPORTED)/arch/$(ARCH)/bits/alltypes.h.in \
+		$(MUSL-IMPORTED)/include/alltypes.h.in > $@ && \
+	$(TOUCH) $@
+
+$(MUSL-IMPORTED_BUILD)/src/internal/version.h: $(MUSL-IMPORTED)/tools/version.sh
+	mkdir -p $$(dirname $@) && \
+	printf '#define VERSION "%s"\n' "$$(cd $(MUSL-IMPORTED); sh tools/version.sh)" > $@ && \
+	$(TOUCH) $@
