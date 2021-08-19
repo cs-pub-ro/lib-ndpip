@@ -61,7 +61,7 @@ struct in_addr *ndpip_uk_iface_get_inaddr(struct ndpip_iface *iface);
 
 struct ether_addr *ndpip_uk_iface_resolve_arp(struct ndpip_iface *iface, struct in_addr peer);
 
-int ndpip_uk_iface_xmit(struct ndpip_iface *iface, struct ndpip_pbuf **pb, uint16_t *cnt);
+int ndpip_uk_iface_xmit(struct ndpip_iface *iface, struct ndpip_pbuf **pb, uint16_t cnt);
 
 void ndpip_uk_nanosleep(uint64_t nsec);
 

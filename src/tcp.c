@@ -10,7 +10,7 @@
 
 
 #define NDPIP_TODO_TCP_RETRANSMIT_COUNT 3
-#define NDPIP_TODO_TCP_RETRANSMIT_TIMEOUT ((struct timespec) { .tv_sec = 10, .tv_nsec = 0 })
+#define NDPIP_TODO_TCP_RETRANSMIT_TIMEOUT ((struct timespec) { .tv_sec = 0, .tv_nsec = 250000000 })
 
 
 int ndpip_tcp_build_xmit_template(struct ndpip_socket *sock)
@@ -63,16 +63,16 @@ int ndpip_tcp_build_xmit_template(struct ndpip_socket *sock)
 int ndpip_tcp_send_meta(struct ndpip_socket *sock, uint8_t flags)
 {
 	uint16_t cnt = 1;
-	struct ndpip_pbuf *syn;
+	struct ndpip_pbuf **syn = malloc(sizeof(struct ndpip_pbuf *) * 1);
 
 	struct ndpip_pbuf_pool *pool = ndpip_iface_get_pbuf_pool_tx(sock->socket_iface);
 
-	if (ndpip_pbuf_pool_request(pool, &syn, &cnt) < 0)
+	if (ndpip_pbuf_pool_request(pool, syn, &cnt) < 0)
 		return -1;
 
-	ndpip_pbuf_resize(syn, sizeof(sock->xmit_template));
+	ndpip_pbuf_resize(*syn, sizeof(sock->xmit_template));
 
-	struct ethhdr *eth = ndpip_pbuf_data(syn);
+	struct ethhdr *eth = ndpip_pbuf_data(*syn);
 	struct iphdr *iph = ((void *) eth) + sizeof(struct ethhdr);
 	struct tcphdr *th = ((void *) iph) + sizeof(struct iphdr);
 
@@ -81,7 +81,7 @@ int ndpip_tcp_send_meta(struct ndpip_socket *sock, uint8_t flags)
 	iph->tot_len = htons(sizeof(struct iphdr) + sizeof(struct tcphdr));
 	th->th_flags = flags;
 
-	if (ndpip_tcp_send(sock, &syn, 1) < 0)
+	if (ndpip_tcp_send(sock, syn, 1) < 0)
 		return -1;
 
 	return 0;
@@ -102,22 +102,29 @@ void ndpip_tcp_rto_handler(void *argp) {
 	ndpip_tcp_send(sock, pb, 1);
 }
 
-bool ndpip_tcp_can_xmit(struct ndpip_socket *sock, struct ndpip_pbuf **pb, uint16_t cnt)
+uint16_t ndpip_tcp_max_xmit(struct ndpip_socket *sock, struct ndpip_pbuf **pb, uint16_t cnt)
 {
 	(void) sock;
 	(void) pb;
-	(void) cnt;
 
-	return true;
+	return cnt;
 }
 
 int ndpip_tcp_send(struct ndpip_socket *sock, struct ndpip_pbuf **pb, uint16_t cnt)
 {
-	if (!ndpip_tcp_can_xmit(sock, pb, cnt))
-		ndpip_pbuf_ring_append(sock->xmit_ring, pb, cnt);
+	ndpip_pbuf_ring_append(sock->xmit_ring, pb, cnt);
 
-	uint16_t cnt2 = cnt;
-	ndpip_iface_xmit(sock->socket_iface, pb, &cnt2);
+	uint16_t cnt2 = ndpip_tcp_max_xmit(sock, pb, cnt);
+	if (cnt2 == 0)
+		return 0;
+
+	if (cnt2 == cnt) {
+		sock->xmit_ring_unsent_off++;
+		sock->xmit_ring_unsent_train_off = 0;
+	} else
+		sock->xmit_ring_unsent_train_off = cnt2;
+
+	ndpip_iface_xmit(sock->socket_iface, pb, cnt2);
 
 	struct timespec expire;
 	clock_gettime(CLOCK_MONOTONIC, &expire);
@@ -127,7 +134,7 @@ int ndpip_tcp_send(struct ndpip_socket *sock, struct ndpip_pbuf **pb, uint16_t c
 	if (!ndpip_timer_armed(sock->socket_timer_rto))
 		ndpip_timer_arm(sock->socket_timer_rto, &expire);
 
-	return -1;
+	return 0;
 }
 
 struct tcphdr *ndpip_tcp_recv_one(struct ndpip_socket *sock)

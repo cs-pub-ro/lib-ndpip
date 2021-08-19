@@ -12,11 +12,11 @@ struct ndpip_list_head {
 
 #define NDPIP_LIST_HEAD(name) struct ndpip_list_head name = { (&name), (&name) };
 
-#define ndpip_list_foreach(type, var, list) \
+#define ndpip_list_foreach(type, var, list_head) \
 	for ( \
-		type *(var) = (type *) (void *) (list)->next; \
-		var != NULL; \
-		var = (type *) (void *) ((struct ndpip_list_head *) (void *) var)->next)
+		type *(var) = (type *) (void *) (list_head)->next; \
+		((void *) (var)) != ((void *) list_head); \
+		(var) = (type *) (void *) ((struct ndpip_list_head *) (void *) (var))->next)
 
 #define ndpip_pbuf_ring_foreach(var, ring) \
 	for ( \
@@ -58,10 +58,11 @@ void ndpip_list_del(struct ndpip_list_head *entry);
 
 typedef void (*ndpip_timer_callback_t)(void *argp);
 
+struct ndpip_timer *ndpip_timer_alloc(ndpip_timer_callback_t cb, void *argp);
 void ndpip_timer_arm(struct ndpip_timer *timer, struct timespec *timeout);
 bool ndpip_timer_armed(struct ndpip_timer *timer);
 bool ndpip_timer_expired(struct ndpip_timer *timer);
-void ndpip_timer_init(struct ndpip_timer *timer, ndpip_timer_callback_t cb, void *argp);
+void ndpip_timer_disarm(struct ndpip_timer *timer);
 
 void ndpip_timespec_add(struct timespec *ts, struct timespec add);
 

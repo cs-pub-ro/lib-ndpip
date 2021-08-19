@@ -51,7 +51,7 @@ int ndpip_pbuf_ring_peek(struct ndpip_pbuf_ring *ring, size_t offset, struct ndp
 	if (ring->ring_occupied <= offset)
 		return -1;
 
-	offset = (ring->ring_start + ring->ring_occupied) % ring->ring_length;
+	offset = (ring->ring_start + offset) % ring->ring_length;
 
 	*pb = ring->ring_base[offset].train_pbufs;
 	*count = ring->ring_base[offset].train_length;
@@ -84,8 +84,8 @@ bool ndpip_timer_expired(struct ndpip_timer *timer)
 	struct timespec now;
 	clock_gettime(CLOCK_MONOTONIC, &now);
 
-	if (((&now)->tv_sec <= timer->timeout.tv_sec) &&
-		((&now)->tv_nsec <= timer->timeout.tv_nsec))
+	if (((&now)->tv_sec >= timer->timeout.tv_sec) &&
+		((&now)->tv_nsec >= timer->timeout.tv_nsec))
 		return true;
 
 	return false;
@@ -107,11 +107,15 @@ void ndpip_timer_disarm(struct ndpip_timer *timer)
 	timer->armed = false;
 }
 
-void ndpip_timer_init(struct ndpip_timer *timer, ndpip_timer_callback_t cb, void *argp)
+struct ndpip_timer *ndpip_timer_alloc(ndpip_timer_callback_t cb, void *argp)
 {
-	timer->armed = false;
-	timer->func = cb;
-	timer->argp = argp;
+	struct ndpip_timer *ret = malloc(sizeof(struct ndpip_timer));
+
+	ret->armed = false;
+	ret->func = cb;
+	ret->argp = argp;
+
+	return ret;
 }
 
 void ndpip_timespec_add(struct timespec *ts, struct timespec add)

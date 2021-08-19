@@ -1,4 +1,5 @@
 #include <assert.h>
+#include <stdio.h>
 #include <string.h>
 #include <time.h>
 
@@ -43,6 +44,8 @@ static void ndpip_uk_rx_thread(void *argp)
 	struct ndpip_uk_iface *uk_iface = (void *) iface;
 
 	while (uk_iface->iface_rx_thread_running) {
+		uk_sched_thread_sleep(10000);
+
 		uint16_t pkt_cnt = uk_iface->iface_rx_burst_size;
 		struct uk_netbuf *pkts[pkt_cnt];
 
@@ -89,8 +92,6 @@ static void ndpip_uk_rx_thread(void *argp)
 
 			ndpip_tcp_feed(sock, th, ntohs(iph->tot_len) - sizeof(struct iphdr));
 		}
-
-		uk_pr_crit("It works! Well... sort of...\n");
 	}
 }
 
@@ -102,9 +103,12 @@ static void ndpip_uk_timers_thread(void *argp)
 	while (uk_iface->iface_timers_thread_running) {
 		ndpip_list_foreach(struct ndpip_timer, timer, &ndpip_uk_timers_head) {
 			if (ndpip_timer_armed(timer) && ndpip_timer_expired(timer)) {
+				ndpip_timer_disarm(timer);
 				timer->func(timer->argp);
 			}
 		}
+
+		uk_sched_thread_sleep(25000000);
 	}
 }
 
@@ -273,8 +277,21 @@ void *ndpip_uk_pbuf_data(struct ndpip_pbuf *pbuf)
 	return nb->data;
 }
 
+static void dummy_free_txpkts(void *argp, struct uk_netbuf *pkts[], uint16_t count)
+{
+	(void) argp;
+	(void) pkts;
+	(void) count;
+}
+
 static int configure_netdev_queues(struct ndpip_uk_iface *iface)
 {
+	iface->iface_txqueue_conf = (struct uk_netdev_txqueue_conf) {
+		.a = iface->iface_alloc,
+		.free_txpkts = dummy_free_txpkts,
+		.free_txpkts_argp = NULL
+	};
+
 	iface->iface_rxqueue_conf = (struct uk_netdev_rxqueue_conf) {
 		.a = iface->iface_alloc,
 		.alloc_rxpkts = alloc_rxpkts,
@@ -289,14 +306,10 @@ static int configure_netdev_queues(struct ndpip_uk_iface *iface)
 		iface->iface_rxqueue_conf.s = iface->iface_sched;
 	}
 
-	iface->iface_txqueue_conf = (struct uk_netdev_txqueue_conf){
-		.a = iface->iface_alloc,
-	};
-
-	if (uk_netdev_rxq_configure(iface->iface_netdev, NDPIP_UK_DEFAULT_RX_QUEUE, 0, &iface->iface_rxqueue_conf) < 0)
+	if (uk_netdev_txq_configure(iface->iface_netdev, NDPIP_UK_DEFAULT_TX_QUEUE, 0, &iface->iface_txqueue_conf) < 0)
 		return -1;
 
-	if (uk_netdev_txq_configure(iface->iface_netdev, NDPIP_UK_DEFAULT_TX_QUEUE, 0, &iface->iface_txqueue_conf) < 0)
+	if (uk_netdev_rxq_configure(iface->iface_netdev, NDPIP_UK_DEFAULT_RX_QUEUE, 0, &iface->iface_rxqueue_conf) < 0)
 		return -1;
 
 	return 0;
@@ -410,13 +423,25 @@ struct ndpip_iface *ndpip_uk_iface_get_by_inaddr(struct in_addr addr)
 		return NULL;
 }
 
-int ndpip_uk_iface_xmit(struct ndpip_iface *iface, struct ndpip_pbuf **pb, uint16_t *cnt)
+int ndpip_uk_iface_xmit(struct ndpip_iface *iface, struct ndpip_pbuf **pb, uint16_t cnt)
 {
-	/* hack to work around a bug */
-	for (uint16_t idx = 0; idx < *cnt; idx++)
+	for (uint16_t idx = 0; idx < cnt; idx++) {
+		/* hack to work around a bug */
 		uk_netbuf_header((struct uk_netbuf *)(void *) pb[idx], -10);
+	}
 
-	return uk_netdev_tx_burst(((struct ndpip_uk_iface *) iface)->iface_netdev, NDPIP_UK_DEFAULT_TX_QUEUE, (struct uk_netbuf **) pb, cnt);
+	for (uint16_t off = 0, cnt2 = cnt; off < cnt; off += cnt2, cnt2 = cnt - off) {
+		int ret;
+
+		do {
+			ret = uk_netdev_tx_burst(((struct ndpip_uk_iface *) iface)->iface_netdev, NDPIP_UK_DEFAULT_TX_QUEUE, (struct uk_netbuf **) pb, &cnt2);
+		} while(uk_netdev_status_notready(ret));
+
+		if (ret < 0)
+			return -1;
+	}
+
+	return 0;
 }
 
 struct ether_addr *ndpip_uk_iface_resolve_arp(struct ndpip_iface *iface, struct in_addr peer)

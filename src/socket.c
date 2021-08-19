@@ -6,7 +6,7 @@
 #include "ndpip/util.h"
 
 
-#define NDPIP_TODO_SOCKET_RING_BUFFER_LEN
+#define NDPIP_TODO_SOCKET_XMIT_RING_LENGTH 1024
 
 
 static NDPIP_LIST_HEAD(ndpip_sockets_head);
@@ -64,7 +64,11 @@ int socket(int domain, int type, int protocol)
 	sock->local_port = 0;
 	sock->remote_port = 0;
 
-	ndpip_timer_init(sock->socket_timer_rto, ndpip_tcp_rto_handler, (void *) sock);
+	sock->xmit_ring = ndpip_pbuf_ring_alloc(NDPIP_TODO_SOCKET_XMIT_RING_LENGTH);
+	sock->xmit_ring_unsent_off = 0;
+	sock->xmit_ring_unsent_train_off = 0;
+
+	sock->socket_timer_rto = ndpip_timer_alloc(ndpip_tcp_rto_handler, (void *) sock);
 	ndpip_timers_add(sock->socket_timer_rto);
 
 	ndpip_list_add(&ndpip_sockets_head, (void *) sock);
