@@ -54,19 +54,25 @@ static void ndpip_uk_rx_thread(void *argp)
 			NDPIP_UK_DEFAULT_RX_QUEUE,
 			pkts, &pkt_cnt);
 
-		if(!uk_netdev_status_notready(r) || (pkt_cnt == 0))
+		if(uk_netdev_status_notready(r) || (pkt_cnt == 0))
 			continue;
+
+		printf("BRRC0\n");
 
 		for (uint16_t idx = 0; idx < pkt_cnt; idx++) {
 			struct uk_netbuf *pkt = pkts[idx];
 			struct ethhdr *eth = pkt->data;
 
+		printf("BRRC1\n");
+
 			if (memcmp(eth->h_dest, ndpip_iface_get_ethaddr(iface), ETH_ALEN) != 0)
 				continue;
 
+		printf("BRRC2\n");
 			if (ntohs(eth->h_proto) != ETH_P_IP)
 				continue;
 
+		printf("BRRC3\n");
 			struct iphdr *iph = ((void *) eth) + sizeof(struct ethhdr);
 
 			if (!((iph->ihl == 5) && (iph->version == 4)))
@@ -90,7 +96,7 @@ static void ndpip_uk_rx_thread(void *argp)
 			if (sock == NULL)
 				continue;
 
-			ndpip_tcp_feed(sock, th, ntohs(iph->tot_len) - sizeof(struct iphdr));
+			ndpip_tcp_feed(sock, &remote_inaddr, remote_port, th, ntohs(iph->tot_len) - sizeof(struct iphdr));
 		}
 	}
 }

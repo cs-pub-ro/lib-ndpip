@@ -80,6 +80,8 @@ int ndpip_tcp_send_meta(struct ndpip_socket *sock, uint8_t flags)
 
 	iph->tot_len = htons(sizeof(struct iphdr) + sizeof(struct tcphdr));
 	th->th_flags = flags;
+	th->th_seq = sock->tcp_seq;
+	th->th_ack = sock->tcp_ack;
 
 	if (ndpip_tcp_send(sock, syn, 1) < 0)
 		return -1;
@@ -144,11 +146,21 @@ struct tcphdr *ndpip_tcp_recv_one(struct ndpip_socket *sock)
 	return NULL;
 }
 
-int ndpip_tcp_feed(struct ndpip_socket *sock, struct tcphdr *th, uint16_t th_len)
+int ndpip_tcp_feed(struct ndpip_socket *sock, struct in_addr *remote_inaddr, uint16_t remote_port, struct tcphdr *th, uint16_t th_len)
 {
 	(void) sock;
-	(void) th;
 	(void) th_len;
+
+	if (th->th_flags == TH_SYN) {
+		if (sock->state == LISTENING) {
+			struct ndpip_socket *asock = ndpip_socket_accept(sock, remote_inaddr, remote_port, ntohl(th->th_seq) + 1);
+			if (asock == NULL)
+				return -1;
+
+			ndpip_tcp_send_meta(asock, TH_SYN | TH_ACK);
+		} else
+			return -1;
+	}
 
 	return 0;
 }

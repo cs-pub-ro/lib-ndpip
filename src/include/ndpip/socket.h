@@ -40,6 +40,8 @@ struct ndpip_socket {
 
 	size_t xmit_ring_unsent_off;
 	uint16_t xmit_ring_unsent_train_off;
+
+	uint32_t tcp_seq, tcp_ack;
 };
 
 

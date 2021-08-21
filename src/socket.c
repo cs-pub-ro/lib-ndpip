@@ -46,6 +46,39 @@ static struct ndpip_socket *ndpip_socket_get(int sockfd)
 	return NULL;
 }
 
+struct ndpip_socket *ndpip_socket_accept(struct ndpip_socket *sock, struct in_addr *remote_inaddr, uint16_t remote_port, uint32_t ack)
+{
+	struct ndpip_socket *asock = malloc(sizeof(struct ndpip_socket));
+
+	asock->socket_id = ++last_socket_id;
+	asock->socket_iface = sock->socket_iface;
+
+	asock->state = CONNECTING;
+
+	asock->local_inaddr = sock->local_inaddr;
+	asock->remote_inaddr = *remote_inaddr;
+
+	asock->local_port = sock->local_port;
+	asock->remote_port = remote_port;
+	
+	asock->tcp_seq = 0;
+	asock->tcp_ack = ack;
+
+	if (ndpip_tcp_build_xmit_template(asock) < 0)
+		return NULL;
+
+	asock->xmit_ring = ndpip_pbuf_ring_alloc(NDPIP_TODO_SOCKET_XMIT_RING_LENGTH);
+	asock->xmit_ring_unsent_off = 0;
+	asock->xmit_ring_unsent_train_off = 0;
+
+	asock->socket_timer_rto = ndpip_timer_alloc(ndpip_tcp_rto_handler, (void *) asock);
+	ndpip_timers_add(asock->socket_timer_rto);
+
+	ndpip_list_add(&ndpip_sockets_head, (void *) asock);
+
+	return asock;
+}
+
 int socket(int domain, int type, int protocol)
 {
 	if (!((domain == AF_INET) && (type == SOCK_NDPIP) && (protocol == IPPROTO_TCP)))
