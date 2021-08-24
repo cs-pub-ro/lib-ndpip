@@ -49,10 +49,14 @@ static void ndpip_uk_rx_thread(void *argp)
 		uint16_t pkt_cnt = uk_iface->iface_rx_burst_size;
 		struct uk_netbuf *pkts[pkt_cnt];
 
+		printf("%hu\n", pkt_cnt);
+
 		int r = uk_netdev_rx_burst(
 			uk_iface->iface_netdev,
 			NDPIP_UK_DEFAULT_RX_QUEUE,
 			pkts, &pkt_cnt);
+
+		printf("%hu\n", pkt_cnt);
 
 		if(uk_netdev_status_notready(r) || (pkt_cnt == 0))
 			continue;
@@ -183,6 +187,14 @@ int ndpip_uk_start_iface(int netdev_id)
 	if (uk_netdev_start((&iface)->iface_netdev) < 0)
 		return -1;
 
+	if ((&iface)->iface_intr) {
+		if (uk_netdev_rxq_intr_enable((&iface)->iface_netdev, NDPIP_UK_DEFAULT_RX_QUEUE) < 0)
+			return -1;
+	} else {
+		if (uk_netdev_rxq_intr_disable((&iface)->iface_netdev, NDPIP_UK_DEFAULT_RX_QUEUE) < 0)
+			return -1;
+	}
+
 	return 0;
 }
 
@@ -238,7 +250,7 @@ int ndpip_uk_set_arp_table(int netdev_id, struct ndpip_arp_peer *iface_arp_table
 	return 0;
 }
 
-int ndpip_uk_set_rxtx_burst_size(int netdev_id, int iface_rx_burst_size)
+int ndpip_uk_set_rxtx_burst_size(int netdev_id, uint16_t iface_rx_burst_size)
 {
 
 	if ((&iface)->iface_netdev_id != netdev_id)
@@ -312,10 +324,10 @@ static int configure_netdev_queues(struct ndpip_uk_iface *iface)
 		iface->iface_rxqueue_conf.s = iface->iface_sched;
 	}
 
-	if (uk_netdev_txq_configure(iface->iface_netdev, NDPIP_UK_DEFAULT_TX_QUEUE, 0, &iface->iface_txqueue_conf) < 0)
+	if (uk_netdev_rxq_configure(iface->iface_netdev, NDPIP_UK_DEFAULT_RX_QUEUE, 0, &iface->iface_rxqueue_conf) < 0)
 		return -1;
 
-	if (uk_netdev_rxq_configure(iface->iface_netdev, NDPIP_UK_DEFAULT_RX_QUEUE, 0, &iface->iface_rxqueue_conf) < 0)
+	if (uk_netdev_txq_configure(iface->iface_netdev, NDPIP_UK_DEFAULT_TX_QUEUE, 0, &iface->iface_txqueue_conf) < 0)
 		return -1;
 
 	return 0;

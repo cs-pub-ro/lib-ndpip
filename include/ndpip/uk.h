@@ -23,4 +23,6 @@ int ndpip_uk_set_arp_table(int netdev_id, struct ndpip_arp_peer *iface_arp_table
 void *ndpip_uk_pbuf_data(struct ndpip_pbuf *pbuf);
 int ndpip_uk_pbuf_resize(struct ndpip_pbuf *pbuf, uint16_t len);
 
+int ndpip_uk_set_rxtx_burst_size(int netdev_id, uint16_t iface_rx_burst_size);
+
 #endif
