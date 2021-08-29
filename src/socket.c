@@ -14,16 +14,17 @@ static NDPIP_LIST_HEAD(ndpip_sockets_head);
 static int last_socket_id = 0;
 
 
-struct ndpip_socket *ndpip_socket_get_by_peer(
-	struct in_addr local_inaddr, uint16_t local_port,
-	struct in_addr remote_inaddr, uint16_t remote_port)
+struct ndpip_socket *ndpip_socket_get_by_peer(struct sockaddr_in *local, struct sockaddr_in *remote)
 {
 	struct ndpip_socket *ret = NULL;
 
 	ndpip_list_foreach(struct ndpip_socket, sock, &ndpip_sockets_head) {
-		if ((sock->local_inaddr.s_addr == local_inaddr.s_addr) && (sock->local_port == local_port)) {
+		if ((sock->local.sin_addr.s_addr == local->sin_addr.s_addr) &&
+			(sock->local.sin_port == local->sin_port)) {
+
 			if (((sock->state == CONNECTING) || (sock->state == CONNECTED)) &&
-				(sock->remote_inaddr.s_addr == remote_inaddr.s_addr) && (sock->remote_port == remote_port)) {
+				(sock->remote.sin_addr.s_addr == remote->sin_addr.s_addr) &&
+				(sock->remote.sin_port == remote->sin_port)) {
 
 				ret = sock;
 				break;
@@ -46,43 +47,10 @@ static struct ndpip_socket *ndpip_socket_get(int sockfd)
 	return NULL;
 }
 
-struct ndpip_socket *ndpip_socket_accept(struct ndpip_socket *sock, struct in_addr *remote_inaddr, uint16_t remote_port, uint32_t ack)
-{
-	struct ndpip_socket *asock = malloc(sizeof(struct ndpip_socket));
-
-	asock->socket_id = ++last_socket_id;
-	asock->socket_iface = sock->socket_iface;
-
-	asock->state = CONNECTING;
-
-	asock->local_inaddr = sock->local_inaddr;
-	asock->remote_inaddr = *remote_inaddr;
-
-	asock->local_port = sock->local_port;
-	asock->remote_port = remote_port;
-	
-	asock->tcp_seq = 0;
-	asock->tcp_ack = ack;
-
-	if (ndpip_tcp_build_xmit_template(asock) < 0)
-		return NULL;
-
-	asock->xmit_ring = ndpip_pbuf_ring_alloc(NDPIP_TODO_SOCKET_XMIT_RING_LENGTH);
-	asock->xmit_ring_unsent_off = 0;
-	asock->xmit_ring_unsent_train_off = 0;
-
-	asock->socket_timer_rto = ndpip_timer_alloc(ndpip_tcp_rto_handler, (void *) asock);
-	ndpip_timers_add(asock->socket_timer_rto);
-
-	ndpip_list_add(&ndpip_sockets_head, (void *) asock);
-
-	return asock;
-}
-
-int socket(int domain, int type, int protocol)
+struct ndpip_socket *ndpip_socket_new(int domain, int type, int protocol)
 {
 	if (!((domain == AF_INET) && (type == SOCK_NDPIP) && (protocol == IPPROTO_TCP)))
-			return -1;
+			return NULL;
 
 	struct ndpip_socket *sock = malloc(sizeof(struct ndpip_socket));
 
@@ -91,11 +59,8 @@ int socket(int domain, int type, int protocol)
 
 	sock->state = NEW;
 
-	sock->local_inaddr = (struct in_addr) { 0 };
-	sock->remote_inaddr = (struct in_addr) { 0 };
-
-	sock->local_port = 0;
-	sock->remote_port = 0;
+	sock->local = (struct sockaddr_in) { .sin_addr.s_addr = 0, .sin_port = 0 };
+	sock->remote = (struct sockaddr_in) { .sin_addr.s_addr = 0, .sin_port = 0 };
 
 	sock->xmit_ring = ndpip_pbuf_ring_alloc(NDPIP_TODO_SOCKET_XMIT_RING_LENGTH);
 	sock->xmit_ring_unsent_off = 0;
@@ -105,6 +70,15 @@ int socket(int domain, int type, int protocol)
 	ndpip_timers_add(sock->socket_timer_rto);
 
 	ndpip_list_add(&ndpip_sockets_head, (void *) sock);
+
+	return sock;
+}
+
+int socket(int domain, int type, int protocol)
+{
+	struct ndpip_socket *sock = ndpip_socket_new(domain, type, protocol);
+	if (sock == NULL)
+		return -1;
 
 	return sock->socket_id;
 }
@@ -130,14 +104,14 @@ int bind(int sockfd, const struct sockaddr *addr, socklen_t addrlen)
 	struct sockaddr_in *addr_in = (void *) addr;
 
 	ndpip_list_foreach(struct ndpip_socket, sock, &ndpip_sockets_head)
-		if ((memcmp(&sock->local_inaddr, &addr_in->sin_addr, sizeof(struct sockaddr_in)) == 0)
-			&& (sock->local_port == addr_in->sin_port))
+		if ((memcmp(&sock->local.sin_addr, &addr_in->sin_addr, sizeof(struct sockaddr_in)) == 0)
+			&& (sock->local.sin_port == addr_in->sin_port))
 			return -EADDRINUSE;
 
-	sock->local_inaddr = addr_in->sin_addr;
-	sock->local_port = addr_in->sin_port;
+	sock->local.sin_addr = addr_in->sin_addr;
+	sock->local.sin_port = addr_in->sin_port;
 
-	sock->socket_iface = ndpip_iface_get_by_inaddr(sock->local_inaddr);
+	sock->socket_iface = ndpip_iface_get_by_inaddr(sock->local.sin_addr);
 
 	sock->state = BOUND;
 
@@ -180,18 +154,16 @@ int connect(int sockfd, const struct sockaddr *addr, socklen_t addrlen)
 
 	struct sockaddr_in *addr_in = (void *) addr;
 
-	sock->remote_inaddr = addr_in->sin_addr;
-	sock->remote_port = addr_in->sin_port;
+	sock->remote.sin_addr = addr_in->sin_addr;
+	sock->remote.sin_port = addr_in->sin_port;
 
 	if (ndpip_tcp_build_xmit_template(sock) < 0)
 		return -1;
 
 	sock->state = CONNECTING;
 
-	if (ndpip_tcp_send_meta(sock, TH_SYN) == 0) {
-		sock->state = CONNECTED;
+	if (ndpip_tcp_send_meta(sock, TH_SYN) == 0)
 		return 0;
-	}
 
 	sock->state = CLOSED;
 

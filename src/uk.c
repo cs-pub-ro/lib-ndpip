@@ -44,45 +44,35 @@ static void ndpip_uk_rx_thread(void *argp)
 	struct ndpip_uk_iface *uk_iface = (void *) iface;
 
 	while (uk_iface->iface_rx_thread_running) {
-		uk_sched_thread_sleep(10000);
+		uint16_t req_pkt_cnt = uk_iface->iface_rx_burst_size;
+		struct ndpip_pbuf *pkts[req_pkt_cnt];
 
-		uint16_t pkt_cnt = uk_iface->iface_rx_burst_size;
-		struct uk_netbuf *pkts[pkt_cnt];
-
-		printf("%hu\n", pkt_cnt);
+		struct uk_netbuf **uk_pkts = (void *) pkts;
+		uint16_t pkt_cnt = req_pkt_cnt;
 
 		int r = uk_netdev_rx_burst(
 			uk_iface->iface_netdev,
 			NDPIP_UK_DEFAULT_RX_QUEUE,
-			pkts, &pkt_cnt);
+			uk_pkts, &pkt_cnt);
 
-		printf("%hu\n", pkt_cnt);
-
-		if(uk_netdev_status_notready(r) || (pkt_cnt == 0))
-			continue;
-
-		printf("BRRC0\n");
+		if (uk_netdev_status_notready(r) || (pkt_cnt == 0))
+			goto again;
 
 		for (uint16_t idx = 0; idx < pkt_cnt; idx++) {
-			struct uk_netbuf *pkt = pkts[idx];
-			struct ethhdr *eth = pkt->data;
-
-		printf("BRRC1\n");
+			struct ethhdr *eth = ndpip_pbuf_data(pkts[idx]);
 
 			if (memcmp(eth->h_dest, ndpip_iface_get_ethaddr(iface), ETH_ALEN) != 0)
 				continue;
 
-		printf("BRRC2\n");
 			if (ntohs(eth->h_proto) != ETH_P_IP)
 				continue;
 
-		printf("BRRC3\n");
 			struct iphdr *iph = ((void *) eth) + sizeof(struct ethhdr);
 
 			if (!((iph->ihl == 5) && (iph->version == 4)))
 				continue;
 
-			if (ntohl(iph->daddr) != ndpip_iface_get_inaddr(iface)->s_addr)
+			if (iph->daddr != ndpip_iface_get_inaddr(iface)->s_addr)
 				continue;
 
 			if (iph->protocol != IPPROTO_TCP)
@@ -90,18 +80,27 @@ static void ndpip_uk_rx_thread(void *argp)
 
 			struct tcphdr *th = ((void *) iph) + sizeof(struct iphdr);
 
-			struct in_addr local_inaddr = { .s_addr = iph->daddr };
-			uint16_t local_port = ntohs(th->th_dport);
+			struct sockaddr_in local = {
+				.sin_family = AF_INET,
+				.sin_addr.s_addr = iph->daddr,
+				.sin_port = ntohs(th->th_dport)
+			};
 
-			struct in_addr remote_inaddr = { .s_addr = iph->saddr };
-			uint16_t remote_port = ntohs(th->th_sport);
+			struct sockaddr_in remote = {
+				.sin_family = AF_INET,
+				.sin_addr.s_addr = iph->saddr,
+				.sin_port = ntohs(th->th_sport)
+			};
 
-			struct ndpip_socket *sock = ndpip_socket_get_by_peer(local_inaddr, local_port, remote_inaddr, remote_port);
+			struct ndpip_socket *sock = ndpip_socket_get_by_peer(&local, &remote);
 			if (sock == NULL)
 				continue;
 
-			ndpip_tcp_feed(sock, &remote_inaddr, remote_port, th, ntohs(iph->tot_len) - sizeof(struct iphdr));
+			ndpip_tcp_feed(sock, &remote, th, ntohs(iph->tot_len) - sizeof(struct iphdr));
 		}
+
+again:
+		uk_sched_thread_sleep(10000);
 	}
 }
 
@@ -409,10 +408,10 @@ struct ndpip_pbuf_pool *ndpip_uk_pbuf_pool_alloc(size_t pbuf_count, uint16_t pbu
 int ndpip_uk_pbuf_pool_request(struct ndpip_pbuf_pool *pool, struct ndpip_pbuf **pb, uint16_t *count)
 {
 	struct ndpip_uk_pbuf_pool *pool_uk = (void *) pool;
-
 	struct uk_allocpool *p = pool_uk->pool_pool;
 
 	void *objs[*count];
+
 	*count = uk_allocpool_take_batch(p, objs, *count);
 	if (*count <= 0)
 		return -1;
@@ -423,6 +422,24 @@ int ndpip_uk_pbuf_pool_request(struct ndpip_pbuf_pool *pool, struct ndpip_pbuf *
 			pool_uk->pool_pbsize,
 			pool_uk->pool_pbheadroom,
 			0, NULL);
+
+		struct uk_netbuf *nb = (void *) pb[idx];
+
+		nb->len = nb->buflen - pool_uk->pool_pbheadroom;
+	}
+
+	return 0;
+}
+
+int ndpip_uk_pbuf_pool_release(struct ndpip_pbuf_pool *pool, struct ndpip_pbuf **pb, uint16_t count)
+{
+	struct ndpip_uk_pbuf_pool *pool_uk = (void *) pool;
+	struct uk_allocpool *p = pool_uk->pool_pool;
+
+	for (uint16_t idx = 0; idx < count; idx++) {
+		struct uk_netbuf *nb = (void *) pb[idx];
+
+		uk_allocpool_return(p, nb->buf);
 	}
 
 	return 0;
@@ -443,23 +460,36 @@ struct ndpip_iface *ndpip_uk_iface_get_by_inaddr(struct in_addr addr)
 
 int ndpip_uk_iface_xmit(struct ndpip_iface *iface, struct ndpip_pbuf **pb, uint16_t cnt)
 {
+	int ret = 0;
+	struct ndpip_uk_iface *uk_iface = (void *) iface;
+	struct uk_netbuf bac_nb[cnt];
+
 	for (uint16_t idx = 0; idx < cnt; idx++) {
-		/* hack to work around a bug */
-		uk_netbuf_header((struct uk_netbuf *)(void *) pb[idx], -10);
+		bac_nb[idx] = *(struct uk_netbuf *)(void *) pb[idx];
 	}
 
 	for (uint16_t off = 0, cnt2 = cnt; off < cnt; off += cnt2, cnt2 = cnt - off) {
 		int ret;
 
 		do {
-			ret = uk_netdev_tx_burst(((struct ndpip_uk_iface *) iface)->iface_netdev, NDPIP_UK_DEFAULT_TX_QUEUE, (struct uk_netbuf **) pb, &cnt2);
+			ret = uk_netdev_tx_burst(
+				uk_iface->iface_netdev,
+				NDPIP_UK_DEFAULT_TX_QUEUE,
+				(struct uk_netbuf **) pb,
+				&cnt2);
 		} while(uk_netdev_status_notready(ret));
 
-		if (ret < 0)
-			return -1;
+		for (uint16_t idx = off; idx < (off + cnt2); idx++)
+			*((struct uk_netbuf *) pb[idx]) = bac_nb[idx];
+
+		if (ret < 0) {
+			ret = -1;
+			goto out;
+		}
 	}
 
-	return 0;
+out:
+	return ret;
 }
 
 struct ether_addr *ndpip_uk_iface_resolve_arp(struct ndpip_iface *iface, struct in_addr peer)
@@ -478,7 +508,8 @@ struct ether_addr *ndpip_uk_iface_resolve_arp(struct ndpip_iface *iface, struct 
 
 int ndpip_uk_pbuf_resize(struct ndpip_pbuf *pb, uint16_t len)
 {
-	((struct uk_netbuf *)(void *) pb)->len = len;
+	struct uk_netbuf *nb = (void *) pb;
+	nb->len = len;
 
 	return 0;
 }

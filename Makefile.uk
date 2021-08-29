@@ -19,6 +19,7 @@ CINCLUDES-$(CONFIG_LIBNDPIP) += $(LIBNDPIP_COMMON_INCLUDES-y)
 
 LIBNDPIP_SRCS-y += $(MUSL-IMPORTED)/src/network/ether.c
 LIBNDPIP_SRCS-y += $(MUSL-IMPORTED)/src/network/htons.c
+LIBNDPIP_SRCS-y += $(MUSL-IMPORTED)/src/network/htonl.c
 LIBNDPIP_SRCS-y += $(MUSL-IMPORTED)/src/network/ntohs.c
 LIBNDPIP_SRCS-y += $(MUSL-IMPORTED)/src/network/ntohl.c
 LIBNDPIP_SRCS-y += $(MUSL-IMPORTED)/src/network/inet_aton.c

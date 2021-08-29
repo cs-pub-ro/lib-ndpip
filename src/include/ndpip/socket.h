@@ -20,17 +20,15 @@ struct ndpip_socket {
 	enum {
 		NEW,
 		BOUND,
+		ACCEPTING,
 		CONNECTING,
 		CONNECTED,
 		LISTENING,
 		CLOSED
 	} state;
 
-	struct in_addr local_inaddr;
-	struct in_addr remote_inaddr;
-
-	uint16_t local_port;
-	uint16_t remote_port;
+	struct sockaddr_in local;
+	struct sockaddr_in remote;
 
 	uint8_t xmit_template[sizeof(struct ethhdr) + sizeof(struct iphdr) + sizeof(struct tcphdr)];
 
@@ -44,7 +42,7 @@ struct ndpip_socket {
 	uint32_t tcp_seq, tcp_ack;
 };
 
-
-struct ndpip_socket *ndpip_socket_get_by_peer(struct in_addr local_inaddr, uint16_t local_peer, struct in_addr remote_inaddr, uint16_t remote_peer);
+struct ndpip_socket *ndpip_socket_new(int domain, int type, int protocol);
+struct ndpip_socket *ndpip_socket_get_by_peer(struct sockaddr_in *local, struct sockaddr_in *peer);
 
 #endif

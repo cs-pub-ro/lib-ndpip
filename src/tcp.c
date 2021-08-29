@@ -18,7 +18,7 @@ int ndpip_tcp_build_xmit_template(struct ndpip_socket *sock)
 	struct ethhdr *eth = (void *) sock->xmit_template;
 
 	struct ether_addr *eth_src = ndpip_iface_get_ethaddr(sock->socket_iface);
-	struct ether_addr *eth_dst = ndpip_iface_resolve_arp(sock->socket_iface, sock->remote_inaddr);
+	struct ether_addr *eth_dst = ndpip_iface_resolve_arp(sock->socket_iface, sock->remote.sin_addr);
 
 	if ((eth_dst == NULL) || (eth_src == NULL))
 		return -1;
@@ -39,14 +39,14 @@ int ndpip_tcp_build_xmit_template(struct ndpip_socket *sock)
 		.ttl = 32,
 		.protocol = IPPROTO_TCP,
 		.check = 0,
-		.saddr = sock->local_inaddr.s_addr,
-		.daddr = sock->remote_inaddr.s_addr
+		.saddr = sock->local.sin_addr.s_addr,
+		.daddr = sock->remote.sin_addr.s_addr
 	};
 
 	struct tcphdr *th = ((void *) iph) + sizeof(struct iphdr);
 	*th = (struct tcphdr) {
-		.th_sport = htons(sock->local_port),
-		.th_dport = htons(sock->remote_port),
+		.th_sport = htons(sock->local.sin_port),
+		.th_dport = htons(sock->remote.sin_port),
 		.th_seq = 0,
 		.th_ack = 0,
 		.th_x2 = 0,
@@ -70,6 +70,9 @@ int ndpip_tcp_send_meta(struct ndpip_socket *sock, uint8_t flags)
 	if (ndpip_pbuf_pool_request(pool, syn, &cnt) < 0)
 		return -1;
 
+	if (cnt != 1)
+		return -1;
+
 	ndpip_pbuf_resize(*syn, sizeof(sock->xmit_template));
 
 	struct ethhdr *eth = ndpip_pbuf_data(*syn);
@@ -80,8 +83,8 @@ int ndpip_tcp_send_meta(struct ndpip_socket *sock, uint8_t flags)
 
 	iph->tot_len = htons(sizeof(struct iphdr) + sizeof(struct tcphdr));
 	th->th_flags = flags;
-	th->th_seq = sock->tcp_seq;
-	th->th_ack = sock->tcp_ack;
+	th->th_seq = htonl(sock->tcp_seq);
+	th->th_ack = htonl(sock->tcp_ack);
 
 	if (ndpip_tcp_send(sock, syn, 1) < 0)
 		return -1;
@@ -146,18 +149,40 @@ struct tcphdr *ndpip_tcp_recv_one(struct ndpip_socket *sock)
 	return NULL;
 }
 
-int ndpip_tcp_feed(struct ndpip_socket *sock, struct in_addr *remote_inaddr, uint16_t remote_port, struct tcphdr *th, uint16_t th_len)
+int ndpip_tcp_feed(struct ndpip_socket *sock, struct sockaddr_in *remote, struct tcphdr *th, uint16_t th_len)
 {
-	(void) sock;
-	(void) th_len;
-
-	if (th->th_flags == TH_SYN) {
-		if (sock->state == LISTENING) {
-			struct ndpip_socket *asock = ndpip_socket_accept(sock, remote_inaddr, remote_port, ntohl(th->th_seq) + 1);
+	if (sock->state == LISTENING) {
+		if (th->th_flags == TH_SYN) {
+			struct ndpip_socket *asock = ndpip_socket_new(remote->sin_family, SOCK_NDPIP, IPPROTO_TCP);
 			if (asock == NULL)
 				return -1;
 
+			asock->local = sock->local;
+			asock->remote = *remote;
+			asock->tcp_ack = ntohl(th->th_seq) + 1;
+			asock->socket_iface = ndpip_iface_get_by_inaddr(asock->local.sin_addr);
+			asock->state = ACCEPTING;
+
+		        if (ndpip_tcp_build_xmit_template(asock) < 0)
+		                return -1;
+
 			ndpip_tcp_send_meta(asock, TH_SYN | TH_ACK);
+		} else
+			return -1;
+	}
+
+	if (sock->state == CONNECTING) {
+		if (th->th_flags == (TH_SYN | TH_ACK)) {
+			sock->state = CONNECTED;
+
+			ndpip_tcp_send_meta(sock, TH_ACK);
+		} else
+			return -1;
+	}
+
+	if (sock->state == ACCEPTING) {
+		if (th->th_flags == TH_ACK) {
+			sock->state = CONNECTED;
 		} else
 			return -1;
 	}

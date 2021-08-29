@@ -13,7 +13,7 @@ int ndpip_tcp_build_xmit_template(struct ndpip_socket *sock);
 int ndpip_tcp_send_meta(struct ndpip_socket *sock, uint8_t flags);
 struct tcphdr *ndpip_tcp_recv_one(struct ndpip_socket *sock);
 
-int ndpip_tcp_feed(struct ndpip_socket *sock, struct in_addr *remote_inaddr, uint16_t remote_port, struct tcphdr *th, uint16_t th_len);
+int ndpip_tcp_feed(struct ndpip_socket *sock, struct sockaddr_in *remote, struct tcphdr *th, uint16_t th_len);
 
 int ndpip_tcp_send(struct ndpip_socket *sock, struct ndpip_pbuf **pb, uint16_t cnt);
 
