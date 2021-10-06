@@ -47,19 +47,20 @@ static void ndpip_uk_rx_thread(void *argp)
 		uint16_t req_pkt_cnt = uk_iface->iface_rx_burst_size;
 		struct ndpip_pbuf *pkts[req_pkt_cnt];
 
-		struct uk_netbuf **uk_pkts = (void *) pkts;
+		struct ndpip_pbuf **uk_pkts = (void *) pkts;
 		uint16_t pkt_cnt = req_pkt_cnt;
 
 		int r = uk_netdev_rx_burst(
 			uk_iface->iface_netdev,
 			NDPIP_UK_DEFAULT_RX_QUEUE,
-			uk_pkts, &pkt_cnt);
+			(void *) uk_pkts, &pkt_cnt);
 
 		if (uk_netdev_status_notready(r) || (pkt_cnt == 0))
 			goto again;
 
 		for (uint16_t idx = 0; idx < pkt_cnt; idx++) {
-			struct ethhdr *eth = ndpip_pbuf_data(pkts[idx]);
+			struct ndpip_pbuf *pb = pkts[idx];
+			struct ethhdr *eth = ndpip_pbuf_data(pb);
 
 			if (memcmp(eth->h_dest, ndpip_iface_get_ethaddr(iface), ETH_ALEN) != 0)
 				continue;
@@ -96,7 +97,8 @@ static void ndpip_uk_rx_thread(void *argp)
 			if (sock == NULL)
 				continue;
 
-			ndpip_tcp_feed(sock, &remote, th, ntohs(iph->tot_len) - sizeof(struct iphdr));
+			ndpip_pbuf_offset(pb, -(int) (sizeof(struct ethhdr) + sizeof(struct iphdr)));
+			ndpip_tcp_feed(sock, &remote, pb);
 		}
 
 again:
@@ -132,8 +134,10 @@ int ndpip_uk_register_iface(int netdev_id, bool intr)
 		return -1;
 
 	(&iface)->iface_netdev = uk_netdev_get(netdev_id);
-	if ((&iface)->iface_netdev == NULL)
+	if ((&iface)->iface_netdev == NULL) {
+		uk_pr_err("uk_netdev_get(%d) == NULL", netdev_id);
 		return -1;
+	}
 
 	(&iface)->iface_netdev_id = netdev_id;
 
@@ -243,7 +247,8 @@ int ndpip_uk_set_arp_table(int netdev_id, struct ndpip_arp_peer *iface_arp_table
 	if ((&iface)->iface_netdev_id != netdev_id)
 		return -1;
 
-	(&iface)->iface_arp_table = iface_arp_table;
+	(&iface)->iface_arp_table = malloc(sizeof(struct ndpip_arp_peer) * iface_arp_table_len);
+	memcpy((&iface)->iface_arp_table, iface_arp_table, sizeof(struct ndpip_arp_peer) * iface_arp_table_len);
 	(&iface)->iface_arp_table_len = iface_arp_table_len;
 
 	return 0;
@@ -292,6 +297,23 @@ void *ndpip_uk_pbuf_data(struct ndpip_pbuf *pbuf)
 {
 	struct uk_netbuf *nb = (void *) pbuf;
 	return nb->data;
+}
+
+uint16_t ndpip_uk_pbuf_length(struct ndpip_pbuf *pbuf)
+{
+	struct uk_netbuf *nb = (void *) pbuf;
+	return nb->len;
+}
+
+int ndpip_uk_pbuf_offset(struct ndpip_pbuf *pbuf, int off)
+{
+	struct uk_netbuf *nb = (void *) pbuf;
+	int r = uk_netbuf_header(nb, off);
+
+	if (r == 1)
+		return 0;
+
+	return r;
 }
 
 static void dummy_free_txpkts(void *argp, struct uk_netbuf *pkts[], uint16_t count)

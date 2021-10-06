@@ -24,6 +24,7 @@ struct ndpip_socket {
 		CONNECTING,
 		CONNECTED,
 		LISTENING,
+		CLOSING,
 		CLOSED
 	} state;
 
@@ -32,14 +33,16 @@ struct ndpip_socket {
 
 	uint8_t xmit_template[sizeof(struct ethhdr) + sizeof(struct iphdr) + sizeof(struct tcphdr)];
 
-	struct ndpip_pbuf_ring *xmit_ring;
-
-	struct ndpip_timer *socket_timer_rto;
-
+	struct ndpip_ring *xmit_ring;
 	size_t xmit_ring_unsent_off;
 	uint16_t xmit_ring_unsent_train_off;
 
-	uint32_t tcp_seq, tcp_ack;
+	struct ndpip_ring *recv_ring;
+	size_t recv_ring_seen_off;
+
+	struct ndpip_timer *socket_timer_rto;
+
+	uint32_t tcp_seq, tcp_ack, tcp_last_ack;
 };
 
 struct ndpip_socket *ndpip_socket_new(int domain, int type, int protocol);

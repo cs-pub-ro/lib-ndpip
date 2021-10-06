@@ -1,8 +1,6 @@
 #ifndef _H_SRC_INCLUDE_PBUF_POOL_H_
 #define _H_SRC_INCLUDE_PBUF_POOL_H_
 
-#include "../../include/ndpip/pbuf.h"
-
 struct ndpip_pbuf_pool;
 
 #ifdef NDPIP_UK

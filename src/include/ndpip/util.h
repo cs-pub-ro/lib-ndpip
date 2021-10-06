@@ -2,8 +2,7 @@
 #define _SRC_INCLUDE_NDPIP_UTIL_H_
 
 #include <time.h>
-
-#include "ndpip/pbuf.h"
+#include <stdbool.h>
 
 struct ndpip_list_head {
 	struct ndpip_list_head *next;
@@ -18,9 +17,9 @@ struct ndpip_list_head {
 		((void *) (var)) != ((void *) list_head); \
 		(var) = (type *) (void *) ((struct ndpip_list_head *) (void *) (var))->next)
 
-#define ndpip_pbuf_ring_foreach(var, ring) \
+#define ndpip_ring_foreach(type, var, ring) \
 	for ( \
-		struct ndpip_pbuf_train *(var) = ring->ring_base + ring->ring_start; \
+		type *(var) = ring->ring_base + ring->ring_start; \
 		((((var) - ring->ring_base) - ring->ring_start) < ring->ring_occupied) && \
 		((((var) - ring->ring_base) - ring->ring_start) > (ring->ring_length - ring->ring_occupied)); \
 		(var) = ring->ring_base + (((var) - ring->ring_base + 1) % ring->ring_length))
@@ -36,22 +35,21 @@ struct ndpip_timer {
 	void *argp;
 };
 
-struct ndpip_pbuf_train {
-	struct ndpip_pbuf **train_pbufs;
-	size_t train_length;
-};
-
-struct ndpip_pbuf_ring {
-	struct ndpip_pbuf_train *ring_base;
+struct ndpip_ring {
+	void *ring_base;
 	size_t ring_length;
+	size_t ring_esize;
+	size_t ring_mask;
 
 	size_t ring_start;
-	size_t ring_occupied;
-};
+	size_t ring_end;
+}; 
 
-struct ndpip_pbuf_ring *ndpip_pbuf_ring_alloc(size_t length);
-int ndpip_pbuf_ring_append(struct ndpip_pbuf_ring *ring, struct ndpip_pbuf **pb, size_t count);
-int ndpip_pbuf_ring_peek(struct ndpip_pbuf_ring *ring, size_t offset, struct ndpip_pbuf ***pb, size_t *count);
+struct ndpip_ring *ndpip_ring_alloc(size_t length, size_t esize);
+int ndpip_ring_push(struct ndpip_ring *ring, void *e);
+int ndpip_ring_peek(struct ndpip_ring *ring, size_t offset, void *buf);
+int ndpip_ring_pop(struct ndpip_ring *ring, size_t *count, void *buf);
+size_t ndpip_ring_size(struct ndpip_ring *ring);
 
 void ndpip_list_add(struct ndpip_list_head *prev, struct ndpip_list_head *entry);
 void ndpip_list_del(struct ndpip_list_head *entry);

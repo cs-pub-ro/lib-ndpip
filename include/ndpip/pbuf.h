@@ -7,6 +7,8 @@ struct ndpip_pbuf;
 #include "uk.h"
 
 #define ndpip_pbuf_data ndpip_uk_pbuf_data
+#define ndpip_pbuf_length ndpip_uk_pbuf_length
+#define ndpip_pbuf_offset ndpip_uk_pbuf_offset
 #define ndpip_pbuf_resize ndpip_uk_pbuf_resize
 #define ndpip_pbuf_refcount_get ndpip_uk_pbuf_refcount_get
 #define ndpip_pbuf_refcount_add ndpip_uk_pbuf_refcount_add

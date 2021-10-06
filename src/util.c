@@ -8,53 +8,65 @@
 
 #include <string.h>
 
-struct ndpip_pbuf_ring *ndpip_pbuf_ring_alloc(size_t length)
+struct ndpip_ring *ndpip_ring_alloc(size_t length, size_t esize)
 {
-	struct ndpip_pbuf_ring *ret = malloc(sizeof(struct ndpip_pbuf_ring));
+	struct ndpip_ring *ret = malloc(sizeof(struct ndpip_ring));
 
-	ret->ring_base = malloc(length * sizeof(struct ndpip_pbuf_train));
+	ret->ring_base = malloc(length * esize);
 	ret->ring_length = length;
 
 	ret->ring_start = 0;
-	ret->ring_occupied = 0;
+	ret->ring_end = 0;
+	ret->ring_mask = length - 1;
+	ret->ring_esize = esize;
 
 	return ret;
 }
 
-int ndpip_pbuf_ring_append(struct ndpip_pbuf_ring *ring, struct ndpip_pbuf **pb, size_t count)
+int ndpip_ring_push(struct ndpip_ring *ring, void *e)
 {
-	if ((ring->ring_length - ring->ring_occupied) < 1)
+	size_t producer = ring->ring_end & ring->ring_mask;
+	size_t ring_next = ring->ring_end + 1;
+
+	if (ring->ring_start == ring_next)
 		return -1;
 
-	size_t ring_next = (ring->ring_start + ring->ring_occupied) % ring->ring_length;
+	memcpy(ring->ring_base + ring->ring_esize * producer, e, ring->ring_esize);
 
-	ring->ring_base[ring_next].train_pbufs = pb;
-	ring->ring_base[ring_next].train_length = count;
-	ring->ring_occupied++;
+	ring->ring_end = ring_next;
 
 	return 0;
 }
 
-int ndpip_pbuf_ring_erase(struct ndpip_pbuf_ring *ring, size_t count)
+size_t ndpip_ring_size(struct ndpip_ring *ring)
 {
-	if (ring->ring_occupied < count)
+	return ring->ring_end - ring->ring_start;
+}
+
+int ndpip_ring_pop(struct ndpip_ring *ring, size_t *count, void *buf)
+{
+	size_t consumer = ring->ring_start & ring->ring_mask;
+	size_t r_count = ring->ring_length - consumer;
+	r_count = r_count < *count ? r_count : *count;
+
+	if ((ring->ring_start + r_count) > ring->ring_end)
 		return -1;
-	
-	ring->ring_start = (ring->ring_start + count) % ring->ring_length;
-	ring->ring_occupied -= count;
+
+	ring->ring_start += r_count;
+
+	*count = r_count;
+	memcpy(buf, ring->ring_base + ring->ring_esize * consumer, ring->ring_esize * r_count);
 
 	return 0;
 }
 
-int ndpip_pbuf_ring_peek(struct ndpip_pbuf_ring *ring, size_t offset, struct ndpip_pbuf ***pb, size_t *count)
+int ndpip_ring_peek(struct ndpip_ring *ring, size_t offset, void *buf)
 {
-	if (ring->ring_occupied <= offset)
+	if ((ring->ring_start + offset) >= ring->ring_end)
 		return -1;
 
-	offset = (ring->ring_start + offset) % ring->ring_length;
-
-	*pb = ring->ring_base[offset].train_pbufs;
-	*count = ring->ring_base[offset].train_length;
+	size_t ring_elem = (ring->ring_start + offset) & ring->ring_mask;
+	memcpy(buf, ring->ring_base + ring->ring_esize * ring_elem, ring->ring_esize);
 
 	return 0;
 }
