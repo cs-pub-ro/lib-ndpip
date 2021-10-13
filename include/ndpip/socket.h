@@ -5,6 +5,7 @@
 
 #define SOCK_NDPIP 42
 
-int ndpip_recv(int sockfd, struct ndpip_pbuf ***pb, size_t *len);
+ssize_t ndpip_recv(int sockfd, struct ndpip_pbuf **pb, size_t count);
+int ndpip_free(int sockfd, struct ndpip_pbuf **pb, size_t len);
 
 #endif

@@ -25,15 +25,15 @@ struct ndpip_ring *ndpip_ring_alloc(size_t length, size_t esize)
 
 int ndpip_ring_push(struct ndpip_ring *ring, void *e)
 {
+	size_t consumer = ring->ring_start & ring->ring_mask;
 	size_t producer = ring->ring_end & ring->ring_mask;
-	size_t ring_next = ring->ring_end + 1;
 
-	if (ring->ring_start == ring_next)
+	if ((consumer == producer) && (ring->ring_end - ring->ring_start))
 		return -1;
 
 	memcpy(ring->ring_base + ring->ring_esize * producer, e, ring->ring_esize);
 
-	ring->ring_end = ring_next;
+	ring->ring_end++;
 
 	return 0;
 }
@@ -46,16 +46,21 @@ size_t ndpip_ring_size(struct ndpip_ring *ring)
 int ndpip_ring_pop(struct ndpip_ring *ring, size_t *count, void *buf)
 {
 	size_t consumer = ring->ring_start & ring->ring_mask;
-	size_t r_count = ring->ring_length - consumer;
+	size_t r_count = ring->ring_end - ring->ring_start;
 	r_count = r_count < *count ? r_count : *count;
 
-	if ((ring->ring_start + r_count) > ring->ring_end)
-		return -1;
-
 	ring->ring_start += r_count;
-
 	*count = r_count;
-	memcpy(buf, ring->ring_base + ring->ring_esize * consumer, ring->ring_esize * r_count);
+
+	size_t count1 = ring->ring_length - consumer;
+	count1 = count1 < r_count ? count1 : r_count;
+
+	memcpy(buf, ring->ring_base + ring->ring_esize * consumer, ring->ring_esize * count1);
+
+	if (count1 == r_count)
+		return 0;
+
+	memcpy(buf + ring->ring_esize * count1, ring->ring_base, ring->ring_esize * (r_count - count1));
 
 	return 0;
 }

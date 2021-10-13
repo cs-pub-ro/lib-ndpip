@@ -21,7 +21,8 @@
 #define NDPIP_UK_DEFAULT_RX_QUEUE 0
 #define NDPIP_UK_DEFAULT_TX_QUEUE 0
 
-#define NDPIP_TODO_UK_PACKETS_COUNT 1024
+#define NDPIP_TODO_UK_PACKETS_COUNT 65536
+#define NDPIP_UK_RX_THREAD_SLEEP 0UL
 
 
 static int get_netdev_info(struct ndpip_uk_iface *iface);
@@ -43,17 +44,28 @@ static void ndpip_uk_rx_thread(void *argp)
 	struct ndpip_iface *iface = argp;
 	struct ndpip_uk_iface *uk_iface = (void *) iface;
 
+	uint16_t replies_cnt = uk_iface->iface_rx_burst_size;
+	struct ndpip_pbuf *replies[replies_cnt];
+	ndpip_pbuf_pool_request(uk_iface->iface_pbuf_pool_tx, replies, &replies_cnt);
+
+	if (replies_cnt != uk_iface->iface_rx_burst_size)
+		return;
+
 	while (uk_iface->iface_rx_thread_running) {
 		uint16_t req_pkt_cnt = uk_iface->iface_rx_burst_size;
 		struct ndpip_pbuf *pkts[req_pkt_cnt];
-
-		struct ndpip_pbuf **uk_pkts = (void *) pkts;
 		uint16_t pkt_cnt = req_pkt_cnt;
 
 		int r = uk_netdev_rx_burst(
 			uk_iface->iface_netdev,
 			NDPIP_UK_DEFAULT_RX_QUEUE,
-			(void *) uk_pkts, &pkt_cnt);
+			(void *) pkts, &pkt_cnt);
+
+		uint16_t replies_len = 0;
+		/*
+		uint16_t replies_idx = 0;
+		struct ndpip_socket *last_sock = NULL;
+		*/
 
 		if (uk_netdev_status_notready(r) || (pkt_cnt == 0))
 			goto again;
@@ -97,12 +109,38 @@ static void ndpip_uk_rx_thread(void *argp)
 			if (sock == NULL)
 				continue;
 
+			/*
+			if ((sock != last_sock) && (last_sock != NULL) && (replies_len > 0)) {
+				ndpip_tcp_send(last_sock, replies + replies_idx, replies_len);
+
+				ndpip_uk_pbuf_pool_reset(uk_iface->iface_pbuf_pool_tx, replies + replies_idx, replies_len);
+				replies_idx += replies_len;
+				replies_len = 0;
+			}
+			*/
+
 			ndpip_pbuf_offset(pb, -(int) (sizeof(struct ethhdr) + sizeof(struct iphdr)));
-			ndpip_tcp_feed(sock, &remote, pb);
+			int r = ndpip_tcp_feed(sock, &remote, pb, replies[replies_len]);
+			if (r > 0)
+				replies_len++;
+
+			/*
+			last_sock = sock;
+			*/
 		}
 
+		if (replies_len > 0) {
+			/* ndpip_tcp_send(last_sock, replies + replies_idx, replies_len); */
+			ndpip_iface_xmit(iface, replies, replies_len);
+			ndpip_uk_pbuf_pool_reset(uk_iface->iface_pbuf_pool_tx, replies, replies_len);
+		}
+
+		/*
+		ndpip_uk_pbuf_pool_reset(uk_iface->iface_pbuf_pool_tx, replies, replies_len);
+		*/
+
 again:
-		uk_sched_thread_sleep(10000);
+		uk_sched_thread_sleep(NDPIP_UK_RX_THREAD_SLEEP);
 	}
 }
 
@@ -453,16 +491,38 @@ int ndpip_uk_pbuf_pool_request(struct ndpip_pbuf_pool *pool, struct ndpip_pbuf *
 	return 0;
 }
 
+int ndpip_uk_pbuf_pool_reset(struct ndpip_pbuf_pool *pool, struct ndpip_pbuf **pb, uint16_t count)
+{
+	struct ndpip_uk_pbuf_pool *pool_uk = (void *) pool;
+
+	for (uint16_t idx = 0; idx < count; idx++) {
+		struct uk_netbuf *nb = (void *) pb[idx];
+
+		(void) uk_netbuf_prepare_buf(
+			nb->buf,
+			pool_uk->pool_pbsize,
+			pool_uk->pool_pbheadroom,
+			0, NULL);
+
+		nb->len = nb->buflen - pool_uk->pool_pbheadroom;
+	}
+
+	return 0;
+}
+
 int ndpip_uk_pbuf_pool_release(struct ndpip_pbuf_pool *pool, struct ndpip_pbuf **pb, uint16_t count)
 {
 	struct ndpip_uk_pbuf_pool *pool_uk = (void *) pool;
 	struct uk_allocpool *p = pool_uk->pool_pool;
 
+	void *objs[count];
+
 	for (uint16_t idx = 0; idx < count; idx++) {
 		struct uk_netbuf *nb = (void *) pb[idx];
-
-		uk_allocpool_return(p, nb->buf);
+		objs[idx] = nb->buf;
 	}
+
+	uk_allocpool_return_batch(p, objs, count);
 
 	return 0;
 }

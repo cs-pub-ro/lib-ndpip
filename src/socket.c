@@ -6,8 +6,8 @@
 #include "ndpip/util.h"
 
 
-#define NDPIP_TODO_SOCKET_XMIT_RING_LENGTH 1024
-#define NDPIP_TODO_SOCKET_RECV_RING_LENGTH 1024
+#define NDPIP_TODO_SOCKET_XMIT_RING_LENGTH 65536
+#define NDPIP_TODO_SOCKET_RECV_RING_LENGTH 65536
 
 
 static NDPIP_LIST_HEAD(ndpip_sockets_head);
@@ -23,7 +23,7 @@ struct ndpip_socket *ndpip_socket_get_by_peer(struct sockaddr_in *local, struct 
 		if ((sock->local.sin_addr.s_addr == local->sin_addr.s_addr) &&
 			(sock->local.sin_port == local->sin_port)) {
 
-			if (((sock->state == CONNECTING) || (sock->state == CONNECTED)) &&
+			if (((sock->state == CONNECTING) || (sock->state == ACCEPTING) || (sock->state == CONNECTED)) &&
 				(sock->remote.sin_addr.s_addr == remote->sin_addr.s_addr) &&
 				(sock->remote.sin_port == remote->sin_port)) {
 
@@ -68,7 +68,6 @@ struct ndpip_socket *ndpip_socket_new(int domain, int type, int protocol)
 	sock->xmit_ring_unsent_train_off = 0;
 
 	sock->recv_ring = ndpip_ring_alloc(NDPIP_TODO_SOCKET_RECV_RING_LENGTH, sizeof(struct ndpip_pbuf *));
-	sock->recv_ring_seen_off = 0;
 
 	sock->socket_timer_rto = ndpip_timer_alloc(ndpip_tcp_rto_handler, (void *) sock);
 	ndpip_timers_add(sock->socket_timer_rto);
@@ -76,6 +75,8 @@ struct ndpip_socket *ndpip_socket_new(int domain, int type, int protocol)
 	sock->tcp_seq = 0;
 	sock->tcp_ack = 0;
 	sock->tcp_last_ack = 0;
+
+	sock->accept_queue = (struct ndpip_list_head) { &sock->accept_queue, &sock->accept_queue };
 
 	ndpip_list_add(&ndpip_sockets_head, (void *) sock);
 
@@ -129,9 +130,7 @@ int bind(int sockfd, const struct sockaddr *addr, socklen_t addrlen)
 			return -1;
 		}
 
-	sock->local.sin_addr = addr_in->sin_addr;
-	sock->local.sin_port = addr_in->sin_port;
-
+	sock->local = *addr_in;
 	sock->socket_iface = ndpip_iface_get_by_inaddr(sock->local.sin_addr);
 
 	sock->state = BOUND;
@@ -197,17 +196,79 @@ int connect(int sockfd, const struct sockaddr *addr, socklen_t addrlen)
 		return -1;
 	}
 
-	if (ndpip_tcp_send_meta(sock, TH_SYN) < 0) {
+	sock->state = CONNECTING;
+
+	struct ndpip_pbuf_pool *pool = ndpip_iface_get_pbuf_pool_rx(sock->socket_iface);
+	if (pool == NULL) {
 		sock->state = CLOSED;
 		errno = EFAULT;
 		return -1;
 	}
 
-	sock->state = CONNECTING;
+	struct ndpip_pbuf **pb = malloc(sizeof(struct ndpip_pbuf *) * 1);
+	uint16_t cnt = 1;
+
+	if (ndpip_pbuf_pool_request(pool, pb, &cnt) < 0) {
+		sock->state = CLOSED;
+		errno = EFAULT;
+		return -1;
+	}
+
+	if (cnt != 1) {
+		sock->state = CLOSED;
+		errno = EFAULT;
+		return -1;
+	}
+
+	if (ndpip_tcp_build_syn(sock, false, pb[0]) < 0) {
+		sock->state = CLOSED;
+		errno = EFAULT;
+		return -1;
+	}
+
+	ndpip_tcp_send(sock, pb, 1);
+
+	while (sock->state != CONNECTED)
+		uk_sched_thread_sleep(1000UL);
+
 	return 0;
 }
 
-int ndpip_recv(int sockfd, struct ndpip_pbuf ***pb, size_t *len)
+int accept(int sockfd, struct sockaddr *addr, socklen_t *addrlen) {
+	if (sockfd < 0) {
+		errno = EBADF;
+		return -1;
+	}
+
+	struct ndpip_socket *sock = ndpip_socket_get(sockfd);
+	if (sock == NULL) {
+		errno = ENOTSOCK;
+		return -1;
+	}
+
+	if (sock->state != LISTENING) {
+		errno = EINVAL;
+		return -1;
+	}
+
+	struct ndpip_socket *asock = ndpip_socket_accept(sock);
+	if (asock == NULL) {
+		errno = EAGAIN;
+		return -1;
+	}
+
+	while (asock->state != CONNECTED)
+		uk_sched_thread_sleep(1000UL);
+
+	if ((addr != NULL) && (addrlen != NULL)) {
+		*((struct sockaddr_in *) addr) = asock->remote;
+		*addrlen = sizeof(struct sockaddr_in);
+	}
+
+	return asock->socket_id;
+}
+
+ssize_t ndpip_recv(int sockfd, struct ndpip_pbuf **pb, size_t count)
 {
 	if (sockfd < 0) {
 		errno = EBADF;
@@ -225,7 +286,7 @@ int ndpip_recv(int sockfd, struct ndpip_pbuf ***pb, size_t *len)
 		return -1;
 	}
 
-	if (*len == 0) {
+	if (count == 0) {
 		errno = EINVAL;
 		return -1;
 	}
@@ -235,41 +296,61 @@ int ndpip_recv(int sockfd, struct ndpip_pbuf ***pb, size_t *len)
 		return -1;
 	}
 
-	size_t r_len = 0, r_len_tmp = 0, offset = 0;
-	while (true) {
-		struct ndpip_pbuf *pb_tmp;
-
-		if (ndpip_ring_peek(sock->recv_ring, offset, &pb_tmp) < 0)
-			break;
-
-		r_len_tmp = r_len + ndpip_pbuf_length(pb_tmp);
-
-		if (r_len_tmp > *len)
-			break;
-
-		r_len = r_len_tmp;
-		offset++;
-	}
-
-	if (offset == 0) {
-		errno = EINVAL;
-		return -1;
-	}
-
-	*pb = malloc(offset * sizeof(struct ndpip_pbuf *));
-
-	size_t count = offset;
-	if (ndpip_ring_pop(sock->recv_ring, &count, *pb) < 0) {
+	if (ndpip_ring_pop(sock->recv_ring, &count, pb) < 0) {
 		errno = EFAULT;
 		return -1;
 	}
-
-	if (count != offset) {
-		errno = EFAULT;
-		return -1;
-	}
-
-	*len = r_len;
-
+	
 	return count;
+}
+
+int ndpip_free(int sockfd, struct ndpip_pbuf **pb, size_t len) {
+	if (sockfd < 0) {
+		errno = EBADF;
+		return -1;
+	}
+
+	struct ndpip_socket *sock = ndpip_socket_get(sockfd);
+	if (sock == NULL) {
+		errno = ENOTSOCK;
+		return -1;
+	}
+
+	if (len == 0)
+		return 0;
+
+	return ndpip_sock_free(sock, pb, len, true);
+}
+
+int ndpip_sock_free(struct ndpip_socket *sock, struct ndpip_pbuf **pb, size_t len, bool rx)
+{
+	struct ndpip_pbuf_pool *pool = NULL;
+	
+	if (rx)
+		pool = ndpip_iface_get_pbuf_pool_rx(sock->socket_iface);
+	else
+		pool = ndpip_iface_get_pbuf_pool_tx(sock->socket_iface);
+
+	if (pool == NULL) {
+		errno = EFAULT;
+		return -1;
+	}
+
+	if (ndpip_pbuf_pool_release(pool, pb, len) < 0) {
+		errno = EFAULT;
+		return -1;
+	}
+
+	return 0;
+}
+
+struct ndpip_socket *ndpip_socket_accept(struct ndpip_socket *sock)
+{
+	if (sock->accept_queue.next == &sock->accept_queue)
+		return NULL;
+
+	struct ndpip_socket *asock = ((void *) sock->accept_queue.next) - offsetof(struct ndpip_socket, accept_queue);
+	ndpip_list_del(sock->accept_queue.next);
+
+	return asock;
 }

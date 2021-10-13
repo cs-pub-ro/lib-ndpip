@@ -13,6 +13,7 @@
 
 struct ndpip_socket {
 	struct ndpip_list_head list;
+	struct ndpip_list_head accept_queue;
 
 	int socket_id;
 	struct ndpip_iface *socket_iface;
@@ -38,7 +39,6 @@ struct ndpip_socket {
 	uint16_t xmit_ring_unsent_train_off;
 
 	struct ndpip_ring *recv_ring;
-	size_t recv_ring_seen_off;
 
 	struct ndpip_timer *socket_timer_rto;
 
@@ -46,6 +46,8 @@ struct ndpip_socket {
 };
 
 struct ndpip_socket *ndpip_socket_new(int domain, int type, int protocol);
+struct ndpip_socket *ndpip_socket_accept(struct ndpip_socket *sock);
 struct ndpip_socket *ndpip_socket_get_by_peer(struct sockaddr_in *local, struct sockaddr_in *peer);
+int ndpip_sock_free(struct ndpip_socket *sock, struct ndpip_pbuf **pb, size_t len, bool rx);
 
 #endif
