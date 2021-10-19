@@ -15,6 +15,7 @@
 #include "ndpip/tcp.h"
 #include "ndpip/uk.h"
 
+
 #define NETBUF_ADDR_ALIGNMENT (sizeof(long long))
 #define NETBUF_ADDR_ALIGN_UP(x) ALIGN_UP((__uptr) (x), NETBUF_ADDR_ALIGNMENT)
 
@@ -22,7 +23,6 @@
 #define NDPIP_UK_DEFAULT_TX_QUEUE 0
 
 #define NDPIP_TODO_UK_PACKETS_COUNT 65536
-#define NDPIP_UK_RX_THREAD_SLEEP 0UL
 
 
 static int get_netdev_info(struct ndpip_uk_iface *iface);
@@ -31,6 +31,8 @@ static int configure_netdev_queues(struct ndpip_uk_iface *iface);
 
 static uint16_t alloc_rxpkts(void *argp, struct uk_netbuf **nb, uint16_t count);
 
+extern char log_buf[1 << 20];
+extern int log_buf_len;
 
 static NDPIP_LIST_HEAD(ndpip_uk_timers_head);
 
@@ -44,16 +46,22 @@ static void ndpip_uk_rx_thread(void *argp)
 	struct ndpip_iface *iface = argp;
 	struct ndpip_uk_iface *uk_iface = (void *) iface;
 
-	uint16_t replies_cnt = uk_iface->iface_rx_burst_size;
-	struct ndpip_pbuf *replies[replies_cnt];
-	ndpip_pbuf_pool_request(uk_iface->iface_pbuf_pool_tx, replies, &replies_cnt);
-
-	if (replies_cnt != uk_iface->iface_rx_burst_size)
-		return;
+	uint64_t before = rdtsc();
+	uint64_t loop = 0, loop_s1 = 0, loop_s2 = 0, iloop = 0, iloop_after = 0;
 
 	while (uk_iface->iface_rx_thread_running) {
+		bool hit = false;
+
+		uint64_t start_loop = rdtsc();
+
 		uint16_t req_pkt_cnt = uk_iface->iface_rx_burst_size;
+		struct ndpip_pbuf *replies[req_pkt_cnt];
 		struct ndpip_pbuf *pkts[req_pkt_cnt];
+
+		assert(ndpip_pbuf_pool_request(uk_iface->iface_pbuf_pool_tx, replies, &req_pkt_cnt) >= 0);
+		assert(req_pkt_cnt == uk_iface->iface_rx_burst_size);
+
+		uint16_t replies_len = 0;
 		uint16_t pkt_cnt = req_pkt_cnt;
 
 		int r = uk_netdev_rx_burst(
@@ -61,15 +69,12 @@ static void ndpip_uk_rx_thread(void *argp)
 			NDPIP_UK_DEFAULT_RX_QUEUE,
 			(void *) pkts, &pkt_cnt);
 
-		uint16_t replies_len = 0;
-		/*
-		uint16_t replies_idx = 0;
-		struct ndpip_socket *last_sock = NULL;
-		*/
-
 		if (uk_netdev_status_notready(r) || (pkt_cnt == 0))
 			goto again;
 
+		hit = true;
+
+		uint64_t start_iloop = rdtsc();
 		for (uint16_t idx = 0; idx < pkt_cnt; idx++) {
 			struct ndpip_pbuf *pb = pkts[idx];
 			struct ethhdr *eth = ndpip_pbuf_data(pb);
@@ -109,38 +114,41 @@ static void ndpip_uk_rx_thread(void *argp)
 			if (sock == NULL)
 				continue;
 
-			/*
-			if ((sock != last_sock) && (last_sock != NULL) && (replies_len > 0)) {
-				ndpip_tcp_send(last_sock, replies + replies_idx, replies_len);
-
-				ndpip_uk_pbuf_pool_reset(uk_iface->iface_pbuf_pool_tx, replies + replies_idx, replies_len);
-				replies_idx += replies_len;
-				replies_len = 0;
-			}
-			*/
-
 			ndpip_pbuf_offset(pb, -(int) (sizeof(struct ethhdr) + sizeof(struct iphdr)));
 			int r = ndpip_tcp_feed(sock, &remote, pb, replies[replies_len]);
 			if (r > 0)
 				replies_len++;
-
-			/*
-			last_sock = sock;
-			*/
 		}
+		uint64_t end_iloop = rdtsc();
+		iloop += end_iloop - start_iloop;
 
-		if (replies_len > 0) {
-			/* ndpip_tcp_send(last_sock, replies + replies_idx, replies_len); */
+		if (replies_len > 0)
 			ndpip_iface_xmit(iface, replies, replies_len);
-			ndpip_uk_pbuf_pool_reset(uk_iface->iface_pbuf_pool_tx, replies, replies_len);
-		}
 
-		/*
-		ndpip_uk_pbuf_pool_reset(uk_iface->iface_pbuf_pool_tx, replies, replies_len);
-		*/
+		iloop_after += rdtsc() - end_iloop;
 
 again:
-		uk_sched_thread_sleep(NDPIP_UK_RX_THREAD_SLEEP);
+		uint64_t again_loop = rdtsc();
+
+		ndpip_pbuf_pool_release(ndpip_iface_get_pbuf_pool_tx(iface), replies + replies_len, req_pkt_cnt - replies_len);
+		uk_sched_yield();
+
+		uint64_t end_loop = rdtsc();	
+
+		if (hit) {
+			loop += end_loop - start_loop;
+			loop_s1 += again_loop - start_loop;
+			loop_s2 += end_loop - again_loop;
+		}
+
+		uint64_t delta = end_loop - before;
+
+		if ((delta > 10000000LU) && (iloop != 0)) {
+			log_buf_len += sprintf(log_buf + log_buf_len, "PERF: delta=%lu; loop=%lu; loop_s1=%lu; loop_s2=%lu; iloop=%lu; illop_after=%lu;\n", delta, loop, loop_s1, loop_s2, iloop, iloop_after);
+
+			loop = loop_s1 = loop_s2 = iloop = iloop_after = 0;
+			before = end_loop;
+		}
 	}
 }
 
@@ -354,19 +362,19 @@ int ndpip_uk_pbuf_offset(struct ndpip_pbuf *pbuf, int off)
 	return r;
 }
 
-static void dummy_free_txpkts(void *argp, struct uk_netbuf *pkts[], uint16_t count)
+static void free_xmit(void *argp, struct uk_netbuf *pkts[], uint16_t count)
 {
-	(void) argp;
-	(void) pkts;
-	(void) count;
+	struct ndpip_iface *iface = argp;
+
+	ndpip_pbuf_pool_release(ndpip_iface_get_pbuf_pool_tx(iface), (struct ndpip_pbuf **) pkts, count);
 }
 
 static int configure_netdev_queues(struct ndpip_uk_iface *iface)
 {
 	iface->iface_txqueue_conf = (struct uk_netdev_txqueue_conf) {
 		.a = iface->iface_alloc,
-		.free_txpkts = dummy_free_txpkts,
-		.free_txpkts_argp = NULL
+		.free_txpkts = free_xmit,
+		.free_txpkts_argp = iface
 	};
 
 	iface->iface_rxqueue_conf = (struct uk_netdev_rxqueue_conf) {
@@ -430,33 +438,33 @@ static int configure_netdev(struct ndpip_uk_iface *iface)
 static uint16_t alloc_rxpkts(void *argp, struct uk_netbuf **nb, uint16_t count)
 {
 	struct ndpip_uk_iface *iface = argp;
-	struct ndpip_pbuf **pb = (void *) nb;
 
 	uint16_t rcount = count;
-	if (ndpip_pbuf_pool_request(ndpip_iface_get_pbuf_pool_rx(iface), pb, &rcount) < 0)
+	if (ndpip_pbuf_pool_request(ndpip_iface_get_pbuf_pool_rx(iface), (void *) nb, &rcount) < 0)
 		return 0;
 
 	return rcount;
 }
 
-struct ndpip_pbuf_pool *ndpip_uk_pbuf_pool_alloc(size_t pbuf_count, uint16_t pbuf_size, size_t pbuf_allign, uint16_t pbuf_headroom)
+struct ndpip_pbuf_pool *ndpip_uk_pbuf_pool_alloc(size_t pbuf_count, uint16_t pbuf_size, size_t pbuf_align, uint16_t pbuf_headroom)
 {
 	struct uk_alloc *a = uk_alloc_get_default();
 	pbuf_size = NETBUF_ADDR_ALIGN_UP(sizeof(struct uk_netbuf)) + NETBUF_ADDR_ALIGN_UP(pbuf_size);
 
-	size_t min_allign = 1 << (16 - __builtin_clz(pbuf_size));
-	pbuf_allign = min_allign > pbuf_allign ? min_allign : pbuf_allign;
+	size_t min_align = 1 << (16 - __builtin_clz(pbuf_size));
+	pbuf_align = min_align > pbuf_align ? min_align : pbuf_align;
 
 	struct ndpip_uk_pbuf_pool *ret = malloc(sizeof(struct ndpip_uk_pbuf_pool));
 	if (ret == NULL)
 		return NULL;
 
-	struct uk_allocpool *p = uk_allocpool_alloc(a, pbuf_count, pbuf_size, pbuf_allign);
+	struct uk_allocpool *p = uk_allocpool_alloc(a, pbuf_count, pbuf_size, pbuf_align);
 	if (p == NULL)
 		return NULL;
 
 	*ret = (struct ndpip_uk_pbuf_pool) {
 		.pool_pool = p,
+		.pool_pbalign = pbuf_align,
 		.pool_pbcount = pbuf_count,
 		.pool_pbsize = pbuf_size,
 		.pool_pbheadroom = pbuf_headroom
@@ -496,15 +504,18 @@ int ndpip_uk_pbuf_pool_reset(struct ndpip_pbuf_pool *pool, struct ndpip_pbuf **p
 	struct ndpip_uk_pbuf_pool *pool_uk = (void *) pool;
 
 	for (uint16_t idx = 0; idx < count; idx++) {
-		struct uk_netbuf *nb = (void *) pb[idx];
+		if (ndpip_pbuf_refcount_get(pb[idx]) == 0) {
+			struct uk_netbuf *nb = (void *) pb[idx];
 
-		(void) uk_netbuf_prepare_buf(
-			nb->buf,
-			pool_uk->pool_pbsize,
-			pool_uk->pool_pbheadroom,
-			0, NULL);
+			(void) uk_netbuf_prepare_buf(
+				nb->buf,
+				pool_uk->pool_pbsize,
+				pool_uk->pool_pbheadroom,
+				0, NULL);
 
-		nb->len = nb->buflen - pool_uk->pool_pbheadroom;
+			nb->len = nb->buflen - pool_uk->pool_pbheadroom;
+		} else
+			ndpip_uk_pbuf_refcount_dec(pb[idx]);
 	}
 
 	return 0;
@@ -512,17 +523,22 @@ int ndpip_uk_pbuf_pool_reset(struct ndpip_pbuf_pool *pool, struct ndpip_pbuf **p
 
 int ndpip_uk_pbuf_pool_release(struct ndpip_pbuf_pool *pool, struct ndpip_pbuf **pb, uint16_t count)
 {
+	if (count == 0)
+		return 0;
+
 	struct ndpip_uk_pbuf_pool *pool_uk = (void *) pool;
 	struct uk_allocpool *p = pool_uk->pool_pool;
 
 	void *objs[count];
+	uint16_t free_cnt = 0;
 
 	for (uint16_t idx = 0; idx < count; idx++) {
 		struct uk_netbuf *nb = (void *) pb[idx];
-		objs[idx] = nb->buf;
+
+		objs[free_cnt++] = nb->buf;
 	}
 
-	uk_allocpool_return_batch(p, objs, count);
+	uk_allocpool_return_batch(p, objs, free_cnt);
 
 	return 0;
 }
@@ -542,36 +558,24 @@ struct ndpip_iface *ndpip_uk_iface_get_by_inaddr(struct in_addr addr)
 
 int ndpip_uk_iface_xmit(struct ndpip_iface *iface, struct ndpip_pbuf **pb, uint16_t cnt)
 {
-	int ret = 0;
 	struct ndpip_uk_iface *uk_iface = (void *) iface;
-	struct uk_netbuf bac_nb[cnt];
 
-	for (uint16_t idx = 0; idx < cnt; idx++) {
-		bac_nb[idx] = *(struct uk_netbuf *)(void *) pb[idx];
+	for (uint16_t idx = 0; idx < cnt;) {
+		uint16_t r_cnt = cnt - idx;
+
+		int r = uk_netdev_tx_burst(
+			uk_iface->iface_netdev,
+			NDPIP_UK_DEFAULT_TX_QUEUE,
+			((struct uk_netbuf **) pb + idx),
+			&r_cnt);
+
+		if ((r < 0) || uk_netdev_status_notready(r))
+			continue;
+
+		idx += r_cnt;
 	}
 
-	for (uint16_t off = 0, cnt2 = cnt; off < cnt; off += cnt2, cnt2 = cnt - off) {
-		int ret;
-
-		do {
-			ret = uk_netdev_tx_burst(
-				uk_iface->iface_netdev,
-				NDPIP_UK_DEFAULT_TX_QUEUE,
-				(struct uk_netbuf **) pb,
-				&cnt2);
-		} while(uk_netdev_status_notready(ret));
-
-		for (uint16_t idx = off; idx < (off + cnt2); idx++)
-			*((struct uk_netbuf *) pb[idx]) = bac_nb[idx];
-
-		if (ret < 0) {
-			ret = -1;
-			goto out;
-		}
-	}
-
-out:
-	return ret;
+	return 0;
 }
 
 struct ether_addr *ndpip_uk_iface_resolve_arp(struct ndpip_iface *iface, struct in_addr peer)

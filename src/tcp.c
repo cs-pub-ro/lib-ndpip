@@ -13,7 +13,7 @@
 
 #define NDPIP_TODO_TCP_RETRANSMIT_COUNT 3
 #define NDPIP_TODO_TCP_WIN_SIZE 65535
-#define NDPIP_TODO_TCP_WIN_SCALE 2
+#define NDPIP_TODO_TCP_WIN_SCALE 5
 #define NDPIP_TODO_TCP_MSS 1400
 #define NDPIP_TODO_TCP_RETRANSMIT_TIMEOUT ((struct timespec) { .tv_sec = 0, .tv_nsec = 250000000 })
 
@@ -130,6 +130,7 @@ int ndpip_tcp_build_syn(struct ndpip_socket *sock, bool ack, struct ndpip_pbuf *
 }
 
 void ndpip_tcp_rto_handler(void *argp) {
+	return;
 	struct ndpip_socket *sock = argp;
 
 	struct ndpip_pbuf_train pbt;
@@ -175,7 +176,7 @@ int ndpip_tcp_send(struct ndpip_socket *sock, struct ndpip_pbuf **pb, uint16_t c
 		sock->xmit_ring_unsent_train_off = cnt2;
 	*/
 
-	ndpip_iface_xmit(sock->socket_iface, pb, cnt2);
+	// ndpip_iface_xmit(sock->socket_iface, pb, cnt2);
 
 	/*
 	struct timespec expire;
@@ -201,38 +202,42 @@ int ndpip_tcp_feed(struct ndpip_socket *sock, struct sockaddr_in *remote, struct
 {
 	struct tcphdr *th = ndpip_pbuf_data(pb);
 	uint16_t th_len = ndpip_pbuf_length(pb);
+	uint8_t th_flags = th->th_flags & ~TH_PUSH;
 
 	uint32_t tcp_seq = ntohl(th->th_seq);
+	uint32_t tcp_ack = ntohl(th->th_ack);
+
 	uint16_t th_hlen = th->th_off << 2;
 	uint16_t data_len = th_len - th_hlen;
 
-	if ((data_len != 0) && (th->th_flags & ~(TH_ACK | TH_PUSH)))
-		goto err;
-
-	if ((sock->state != LISTENING) && (th->th_flags & TH_ACK)) {
-		uint32_t tcp_ack = ntohl(th->th_ack);
-
+	if ((sock->state != LISTENING) && (th_flags & TH_ACK)) {
 		if ((tcp_ack > (sock->tcp_seq + 1)) || (tcp_ack < sock->tcp_last_ack))
 			goto err;
+
+		if (tcp_seq != sock->tcp_ack) {
+			printf("TCPERR: %u != %u\n", tcp_seq, sock->tcp_ack);
+			goto err;
+		}
 
 		sock->tcp_last_ack = tcp_ack;
 		if (sock->tcp_last_ack == (sock->tcp_seq + 1))
 			ndpip_timer_disarm(sock->socket_timer_rto);
 	}
 
-	if (sock->state != LISTENING) {
-		uint32_t ack_inc = 0;
-		if ((data_len == 0) && (th->th_flags != TH_ACK))
+	uint32_t ack_inc;
+
+	if (data_len == 0) {
+		if (th_flags != TH_ACK)
 			ack_inc = 1;
+		else
+			ack_inc = 0;
+	} else
+		ack_inc = data_len;
 
-		if (data_len != 0)
-			ack_inc = data_len;
-
-		sock->tcp_ack = tcp_seq + ack_inc;
-	}
+	sock->tcp_ack = tcp_seq + ack_inc;
 
 	if (sock->state == LISTENING) {
-		if (th->th_flags != TH_SYN)
+		if (th_flags != TH_SYN)
 			goto err;
 
 		struct ndpip_socket *asock = ndpip_socket_new(remote->sin_family, SOCK_NDPIP, IPPROTO_TCP);
@@ -256,7 +261,7 @@ int ndpip_tcp_feed(struct ndpip_socket *sock, struct sockaddr_in *remote, struct
 	}
 
 	if (sock->state == CONNECTING) {
-		if (th->th_flags != (TH_SYN | TH_ACK))
+		if (th_flags != (TH_SYN | TH_ACK))
 			goto err;
 
 		sock->state = CONNECTED;
@@ -267,7 +272,7 @@ int ndpip_tcp_feed(struct ndpip_socket *sock, struct sockaddr_in *remote, struct
 	}
 
 	if (sock->state == ACCEPTING) {
-		if (th->th_flags != TH_ACK)
+		if (th_flags != TH_ACK)
 			goto err;
 
 		sock->state = CONNECTED;
@@ -275,22 +280,26 @@ int ndpip_tcp_feed(struct ndpip_socket *sock, struct sockaddr_in *remote, struct
 	}
 
 	if (sock->state == CONNECTED) {
-		if (th->th_flags == (TH_FIN | TH_ACK)) {
+		if (th_flags == (TH_FIN | TH_ACK)) {
 			sock->state = CLOSED;
 
 			ndpip_tcp_build_meta(sock, TH_ACK, rpb);
 			return 1;
 		}
 
-		if (th->th_flags == TH_FIN) {
+		if (th_flags == TH_FIN) {
 			sock->state = CLOSING;
 
 			ndpip_tcp_build_meta(sock, TH_FIN | TH_ACK, rpb);
 			return 1;
 		}
 
-		if (!((data_len == 0) ^ (th->th_flags & TH_ACK)))
-			goto err;
+		if (data_len == 0) {
+			if (!(th_flags & TH_ACK))
+				goto err;
+			else
+				return 0;
+		}
 
 		ndpip_pbuf_offset(pb, -th_hlen);
 		ndpip_ring_push(sock->recv_ring, &pb);
@@ -300,7 +309,7 @@ int ndpip_tcp_feed(struct ndpip_socket *sock, struct sockaddr_in *remote, struct
 	}
 
 	if (sock->state == CLOSING) {
-		if (th->th_flags == (TH_FIN | TH_ACK)) {
+		if (th_flags == (TH_FIN | TH_ACK)) {
 			sock->state = CLOSED;
 
 			ndpip_tcp_build_meta(sock, TH_ACK, rpb);
@@ -309,6 +318,7 @@ int ndpip_tcp_feed(struct ndpip_socket *sock, struct sockaddr_in *remote, struct
 	}
 
 err:
+	sock->state = CLOSED;
 	ndpip_tcp_build_meta(sock, TH_RST, rpb);
 	return 1;
 }

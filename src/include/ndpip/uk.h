@@ -41,6 +41,7 @@ struct ndpip_uk_iface {
 
 struct ndpip_uk_pbuf_pool {
 	struct uk_allocpool *pool_pool;
+	uint16_t pool_pbalign;
 	uint16_t pool_pbcount;
 	uint16_t pool_pbsize;
 	uint16_t pool_pbheadroom;
