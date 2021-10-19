@@ -5,6 +5,8 @@
 
 #define SOCK_NDPIP 42
 
+#define SO_NDPIP_TCP_WIN_SCALE 100
+
 ssize_t ndpip_recv(int sockfd, struct ndpip_pbuf **pb, size_t count);
 int ndpip_free(int sockfd, struct ndpip_pbuf **pb, size_t len);
 

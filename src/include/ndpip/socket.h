@@ -43,6 +43,8 @@ struct ndpip_socket {
 	struct ndpip_timer *socket_timer_rto;
 
 	uint32_t tcp_seq, tcp_ack, tcp_last_ack;
+
+	uint8_t tcp_win_scale;
 };
 
 struct ndpip_socket *ndpip_socket_new(int domain, int type, int protocol);

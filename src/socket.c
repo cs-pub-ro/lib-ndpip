@@ -75,6 +75,7 @@ struct ndpip_socket *ndpip_socket_new(int domain, int type, int protocol)
 	sock->tcp_seq = 0;
 	sock->tcp_ack = 0;
 	sock->tcp_last_ack = 0;
+	sock->tcp_win_scale = 1;
 
 	sock->accept_queue = (struct ndpip_list_head) { &sock->accept_queue, &sock->accept_queue };
 
@@ -281,7 +282,9 @@ ssize_t ndpip_recv(int sockfd, struct ndpip_pbuf **pb, size_t count)
 		return -1;
 	}
 
-	if ((sock->state != CONNECTED) && (ndpip_ring_size(sock->recv_ring) == 0)) {
+	if ((sock->state != CONNECTED) && (sock->state != CLOSING)
+		&& (ndpip_ring_size(sock->recv_ring) == 0)) {
+
 		errno = EINVAL;
 		return -1;
 	}
@@ -353,4 +356,44 @@ struct ndpip_socket *ndpip_socket_accept(struct ndpip_socket *sock)
 	ndpip_list_del(sock->accept_queue.next);
 
 	return asock;
+}
+
+int setsockopt(int sockfd, int level, int optname, const void *optval, socklen_t optlen)
+{
+	if (sockfd < 0) {
+		errno = EBADF;
+		return -1;
+	}
+
+	struct ndpip_socket *sock = ndpip_socket_get(sockfd);
+	if (sock == NULL) {
+		errno = ENOTSOCK;
+		return -1;
+	}
+
+	if (level != SOL_SOCKET) {
+		errno = ENOPROTOOPT;
+		return -1;
+	}
+
+	switch (optname) {
+		case SO_NDPIP_TCP_WIN_SCALE:
+			if (optlen != 1) {
+				errno = EINVAL;
+				return -1;
+			}
+
+			if (sock->state != NEW) {
+				errno = EINVAL;
+				return -1;
+			}
+
+			sock->tcp_win_scale = *((uint8_t *) optval);
+
+			return 0;
+
+		default:
+			errno = EINVAL;
+			return -1;
+	}
 }

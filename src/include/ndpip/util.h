@@ -3,6 +3,7 @@
 
 #include <time.h>
 #include <stdbool.h>
+#include <stdint.h>
 
 struct ndpip_list_head {
 	struct ndpip_list_head *next;
@@ -63,5 +64,12 @@ bool ndpip_timer_expired(struct ndpip_timer *timer);
 void ndpip_timer_disarm(struct ndpip_timer *timer);
 
 void ndpip_timespec_add(struct timespec *ts, struct timespec add);
+
+static inline uint64_t rdtsc(void)
+{
+	uint64_t l, h;
+	asm volatile("rdtsc" : "=a"(l), "=d"(h));
+	return (h << 32) | l;
+}
 
 #endif
