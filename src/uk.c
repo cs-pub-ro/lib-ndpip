@@ -131,9 +131,9 @@ again:
 		uint64_t again_loop = rdtsc();
 
 		ndpip_pbuf_pool_release(ndpip_iface_get_pbuf_pool_tx(iface), replies + replies_len, req_pkt_cnt - replies_len);
-		uk_sched_yield();
+		// uk_sched_yield();
 
-		uint64_t end_loop = rdtsc();	
+		uint64_t end_loop = rdtsc();
 
 		if (hit) {
 			loop += end_loop - start_loop;
@@ -476,6 +476,28 @@ struct ndpip_pbuf_pool *ndpip_uk_pbuf_pool_alloc(size_t pbuf_count, uint16_t pbu
 int ndpip_uk_pbuf_pool_request(struct ndpip_pbuf_pool *pool, struct ndpip_pbuf **pb, uint16_t *count)
 {
 	struct ndpip_uk_pbuf_pool *pool_uk = (void *) pool;
+
+	struct uk_alloc *a = uk_alloc_get_default();
+
+	for (uint16_t idx = 0; idx < *count; idx++) {
+		pb[idx] = (void *) uk_netbuf_alloc_buf(a,
+				pool_uk->pool_pbsize,
+				pool_uk->pool_pbalign,
+				pool_uk->pool_pbheadroom,
+				0, NULL);
+
+		struct uk_netbuf *nb = (void *) pb[idx];
+
+		nb->len = nb->buflen - pool_uk->pool_pbheadroom;
+	}
+
+	return 0;
+}
+
+/*
+int ndpip_uk_pbuf_pool_request(struct ndpip_pbuf_pool *pool, struct ndpip_pbuf **pb, uint16_t *count)
+{
+	struct ndpip_uk_pbuf_pool *pool_uk = (void *) pool;
 	struct uk_allocpool *p = pool_uk->pool_pool;
 
 	void *objs[*count];
@@ -498,13 +520,14 @@ int ndpip_uk_pbuf_pool_request(struct ndpip_pbuf_pool *pool, struct ndpip_pbuf *
 
 	return 0;
 }
+*/
 
 int ndpip_uk_pbuf_pool_reset(struct ndpip_pbuf_pool *pool, struct ndpip_pbuf **pb, uint16_t count)
 {
 	struct ndpip_uk_pbuf_pool *pool_uk = (void *) pool;
 
 	for (uint16_t idx = 0; idx < count; idx++) {
-		if (ndpip_pbuf_refcount_get(pb[idx]) == 0) {
+//		if (ndpip_pbuf_refcount_get(pb[idx]) == 0) {
 			struct uk_netbuf *nb = (void *) pb[idx];
 
 			(void) uk_netbuf_prepare_buf(
@@ -514,6 +537,23 @@ int ndpip_uk_pbuf_pool_reset(struct ndpip_pbuf_pool *pool, struct ndpip_pbuf **p
 				0, NULL);
 
 			nb->len = nb->buflen - pool_uk->pool_pbheadroom;
+//		} else
+//			ndpip_uk_pbuf_refcount_dec(pb[idx]);
+	}
+
+	return 0;
+}
+
+int ndpip_uk_pbuf_pool_release(struct ndpip_pbuf_pool *pool, struct ndpip_pbuf **pb, uint16_t count)
+{
+	(void) pool;
+
+	if (count == 0)
+		return 0;
+
+	for (uint16_t idx = 0; idx < count; idx++) {
+		if (ndpip_pbuf_refcount_get(pb[idx]) == 1) {
+			uk_netbuf_free_single((void *) pb[idx]);
 		} else
 			ndpip_uk_pbuf_refcount_dec(pb[idx]);
 	}
@@ -521,6 +561,7 @@ int ndpip_uk_pbuf_pool_reset(struct ndpip_pbuf_pool *pool, struct ndpip_pbuf **p
 	return 0;
 }
 
+/*
 int ndpip_uk_pbuf_pool_release(struct ndpip_pbuf_pool *pool, struct ndpip_pbuf **pb, uint16_t count)
 {
 	if (count == 0)
@@ -542,6 +583,7 @@ int ndpip_uk_pbuf_pool_release(struct ndpip_pbuf_pool *pool, struct ndpip_pbuf *
 
 	return 0;
 }
+*/
 
 struct in_addr *ndpip_uk_iface_get_inaddr(struct ndpip_iface *iface)
 {
