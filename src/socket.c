@@ -6,8 +6,8 @@
 #include "ndpip/util.h"
 
 
-#define NDPIP_TODO_SOCKET_XMIT_RING_LENGTH 65536
-#define NDPIP_TODO_SOCKET_RECV_RING_LENGTH 65536
+#define NDPIP_TODO_SOCKET_XMIT_RING_LENGTH (1 << 20)
+#define NDPIP_TODO_SOCKET_RECV_RING_LENGTH (1 << 20)
 
 
 static NDPIP_LIST_HEAD(ndpip_sockets_head);
