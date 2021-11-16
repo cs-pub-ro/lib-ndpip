@@ -315,7 +315,6 @@ int ndpip_tcp_feed(struct ndpip_socket *sock, struct sockaddr_in *remote, struct
 //		ndpip_ring_push(sock->recv_ring, &pb);
 
 //		ndpip_tcp_build_meta(sock, TH_ACK, rpb);
-		sock->tcp_rsp_ack = true;
 		return 2;
 	}
 
@@ -329,7 +328,9 @@ int ndpip_tcp_feed(struct ndpip_socket *sock, struct sockaddr_in *remote, struct
 	}
 
 err:
-	sock->state = CLOSED;
+	if (sock->state != LISTENING)
+		sock->state = CLOSED;
+
 	ndpip_tcp_build_meta(sock, TH_RST, rpb);
 	return 1;
 }

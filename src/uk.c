@@ -22,8 +22,7 @@
 #define NDPIP_UK_DEFAULT_RX_QUEUE 0
 #define NDPIP_UK_DEFAULT_TX_QUEUE 0
 
-#define NDPIP_TODO_UK_PACKETS_COUNT 65536
-
+#define NDPIP_TODO_UK_PACKETS_COUNT (1 << 12UL)
 
 static int get_netdev_info(struct ndpip_uk_iface *iface);
 static int configure_netdev(struct ndpip_uk_iface *iface);
@@ -49,10 +48,13 @@ static void ndpip_uk_rx_thread(void *argp)
 	uint64_t before, before2;
 	before = before2 = rdtsc();
 
-	uint64_t loop = 0, loop_rx = 0, loop_alloc = 0, iloop = 0, iloop_tx = 0, loop_release = 0;
+	uint64_t loop = 0, loop_rx = 0, loop_alloc = 0, iloop = 0, iloop_tx = 0, loop_release = 0, prologue = 0;
+	uint64_t pkt_cnt_a = 0;
+	uint64_t replies_len_a = 0;
+	uint64_t iter = 0;
 
 	while (uk_iface->iface_rx_thread_running) {
-		bool hit = false;
+		uk_sched_thread_sleep(32000UL);
 
 		uint64_t start_loop = rdtsc();
 
@@ -70,6 +72,8 @@ static void ndpip_uk_rx_thread(void *argp)
 			NDPIP_UK_DEFAULT_RX_QUEUE,
 			(void *) pkts, &pkt_cnt);
 
+		prologue += rdtsc() - start_loop;
+
 		if (uk_netdev_status_notready(r) || (pkt_cnt == 0))
 			continue;
 
@@ -79,13 +83,10 @@ static void ndpip_uk_rx_thread(void *argp)
 		uint16_t sock_acks_len = 0;
 		struct ndpip_pbuf *replies[pkt_cnt];
 		struct ndpip_socket *sock_acks[pkt_cnt];
-		sock_acks[0] = NULL;
 
 		uint16_t tmp_pkt_cnt = pkt_cnt;
 		assert(ndpip_pbuf_pool_request(uk_iface->iface_pbuf_pool_tx, replies, &tmp_pkt_cnt) >= 0);
 		assert(tmp_pkt_cnt == pkt_cnt);
-
-		hit = true;
 
 		uint64_t start_iloop = rdtsc();
 		for (uint16_t idx = 0; idx < pkt_cnt; idx++) {
@@ -132,8 +133,10 @@ static void ndpip_uk_rx_thread(void *argp)
 			if (r == 1)
 				replies_len++;
 
-			if (r == 2)
+			if (r == 2) {
+				sock->tcp_rsp_ack = true;
 				sock_acks[sock_acks_len++] = sock;
+			}
 		}
 
 		for (uint16_t idx = 0; idx < sock_acks_len; idx++)
@@ -141,6 +144,10 @@ static void ndpip_uk_rx_thread(void *argp)
 				sock_acks[idx]->tcp_rsp_ack = false;
 				ndpip_tcp_build_meta(sock_acks[idx], TH_ACK, replies[replies_len++]);
 			}
+
+		replies_len_a += replies_len;
+		pkt_cnt_a += pkt_cnt;
+		iter++;
 
 		uint64_t end_iloop = rdtsc();
 		iloop += end_iloop - start_iloop;
@@ -152,27 +159,25 @@ static void ndpip_uk_rx_thread(void *argp)
 
 		iloop_tx += rdtsc() - end_iloop;
 
-		uint64_t again_loop = rdtsc();
-
 		uint64_t end_loop = rdtsc();
 
-		if (hit) {
-			loop += end_loop - start_loop;
-			loop_alloc += start_alloc - start_loop;
-			loop_rx += start_iloop - start_alloc;
-			loop_release += end_loop - again_loop;
-		}
+		loop += end_loop - start_loop;
+		loop_alloc += start_iloop - start_alloc;
+		loop_rx += start_alloc - start_loop;
+		loop_release += end_loop - end_loop;
 
 		uint64_t delta = end_loop - before;
 
-		/*
-		if ((delta > 10000000UL) && (iloop != 0)) {
-			log_buf_len += sprintf(log_buf + log_buf_len, "PERF: delta=%lu; loop=%lu; loop_alloc=%lu; loop_release=%lu; iloop=%lu; illop_tx=%lu; loop_rx=%lu;\n", delta, loop, loop_alloc, loop_release, iloop, iloop_tx, loop_rx);
+		if (delta > 10000000000UL) {
+			printf("PERF: delta=%lu; prologue=%lu; loop=%lu; loop_alloc=%lu; loop_release=%lu; iloop=%lu; illop_tx=%lu; loop_rx=%lu;\n", delta, prologue, loop, loop_alloc, loop_release, iloop, iloop_tx, loop_rx);
+			printf("%lu/%lu/%hu\n", replies_len_a / iter, pkt_cnt_a / iter, uk_iface->iface_rx_burst_size);
 
-			loop = loop_alloc = loop_release = iloop = iloop_tx = loop_rx = 0;
+			prologue = loop = loop_rx = loop_alloc = iloop = iloop_tx = loop_release = 0;
+			replies_len_a = pkt_cnt_a = 0;
+			iter = 0;
+
 			before = end_loop;
 		}
-		*/
 	}
 }
 
