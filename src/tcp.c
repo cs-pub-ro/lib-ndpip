@@ -13,8 +13,7 @@
 
 #define NDPIP_TODO_TCP_RETRANSMIT_COUNT 3
 #define NDPIP_TODO_TCP_WIN_SIZE 65535
-#define NDPIP_TODO_TCP_WIN_SCALE 7
-#define NDPIP_TODO_TCP_MSS 1436
+#define NDPIP_TODO_TCP_MSS 1498
 #define NDPIP_TODO_TCP_RETRANSMIT_TIMEOUT ((struct timespec) { .tv_sec = 0, .tv_nsec = 250000000 })
 
 
@@ -214,12 +213,10 @@ int ndpip_tcp_feed(struct ndpip_socket *sock, struct sockaddr_in *remote, struct
 		if ((tcp_ack > (sock->tcp_seq + 1)) || (tcp_ack < sock->tcp_last_ack))
 			goto err;
 
-		/*
 		if (tcp_seq != sock->tcp_ack) {
 			printf("TCPERR: %u != %u\n", tcp_seq, sock->tcp_ack);
 			goto err;
 		}
-		*/
 
 		sock->tcp_last_ack = tcp_ack;
 		if (sock->tcp_last_ack == (sock->tcp_seq + 1))
@@ -240,6 +237,9 @@ int ndpip_tcp_feed(struct ndpip_socket *sock, struct sockaddr_in *remote, struct
 
 	if (sock->state == LISTENING) {
 		if (th_flags != TH_SYN)
+			goto err;
+
+		if (data_len != 0)
 			goto err;
 
 		struct ndpip_socket *asock = ndpip_socket_new(remote->sin_family, SOCK_NDPIP, IPPROTO_TCP);
@@ -268,6 +268,9 @@ int ndpip_tcp_feed(struct ndpip_socket *sock, struct sockaddr_in *remote, struct
 		if (th_flags != (TH_SYN | TH_ACK))
 			goto err;
 
+		if (data_len != 0)
+			goto err;
+
 		sock->state = CONNECTED;
 
 		ndpip_tcp_build_meta(sock, TH_ACK, rpb);
@@ -278,6 +281,8 @@ int ndpip_tcp_feed(struct ndpip_socket *sock, struct sockaddr_in *remote, struct
 	if (sock->state == ACCEPTING) {
 		if (th_flags != TH_ACK)
 			goto err;
+
+		sock->tcp_ack -= 6;
 
 		sock->state = CONNECTED;
 		return 0;
@@ -306,7 +311,8 @@ int ndpip_tcp_feed(struct ndpip_socket *sock, struct sockaddr_in *remote, struct
 		}
 
 		ndpip_pbuf_offset(pb, -th_hlen);
-		ndpip_ring_push(sock->recv_ring, &pb);
+		ndpip_sock_free(sock, &pb, 1, true);
+//		ndpip_ring_push(sock->recv_ring, &pb);
 
 		ndpip_tcp_build_meta(sock, TH_ACK, rpb);
 		return 1;
@@ -322,7 +328,9 @@ int ndpip_tcp_feed(struct ndpip_socket *sock, struct sockaddr_in *remote, struct
 	}
 
 err:
-	sock->state = CLOSED;
+	if (sock->state != LISTENING)
+		sock->state = CLOSED;
+
 	ndpip_tcp_build_meta(sock, TH_RST, rpb);
 	return 1;
 }
