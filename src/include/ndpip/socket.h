@@ -45,6 +45,7 @@ struct ndpip_socket {
 	uint32_t tcp_seq, tcp_ack, tcp_last_ack;
 
 	uint8_t tcp_win_scale;
+	bool tcp_rsp_ack;
 };
 
 struct ndpip_socket *ndpip_socket_new(int domain, int type, int protocol);

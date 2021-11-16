@@ -78,6 +78,7 @@ struct ndpip_socket *ndpip_socket_new(int domain, int type, int protocol)
 	sock->tcp_win_scale = 1;
 
 	sock->accept_queue = (struct ndpip_list_head) { &sock->accept_queue, &sock->accept_queue };
+	sock->tcp_rsp_ack = false;
 
 	ndpip_list_add(&ndpip_sockets_head, (void *) sock);
 

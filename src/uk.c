@@ -76,7 +76,10 @@ static void ndpip_uk_rx_thread(void *argp)
 		uint64_t start_alloc = rdtsc();
 
 		uint16_t replies_len = 0;
+		uint16_t sock_acks_len = 0;
 		struct ndpip_pbuf *replies[pkt_cnt];
+		struct ndpip_socket *sock_acks[pkt_cnt];
+		sock_acks[0] = NULL;
 
 		uint16_t tmp_pkt_cnt = pkt_cnt;
 		assert(ndpip_pbuf_pool_request(uk_iface->iface_pbuf_pool_tx, replies, &tmp_pkt_cnt) >= 0);
@@ -126,9 +129,18 @@ static void ndpip_uk_rx_thread(void *argp)
 
 			ndpip_pbuf_offset(pb, -(int) (sizeof(struct ethhdr) + sizeof(struct iphdr)));
 			int r = ndpip_tcp_feed(sock, &remote, pb, replies[replies_len]);
-			if (r > 0)
+			if (r == 1)
 				replies_len++;
+
+			if (r == 2)
+				sock_acks[sock_acks_len++] = sock;
 		}
+
+		for (uint16_t idx = 0; idx < sock_acks_len; idx++)
+			if (sock_acks[idx]->tcp_rsp_ack) {
+				sock_acks[idx]->tcp_rsp_ack = false;
+				ndpip_tcp_build_meta(sock_acks[idx], TH_ACK, replies[replies_len++]);
+			}
 
 		uint64_t end_iloop = rdtsc();
 		iloop += end_iloop - start_iloop;
