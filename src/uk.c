@@ -54,7 +54,7 @@ static void ndpip_uk_rx_thread(void *argp)
 	uint64_t iter = 0;
 
 	while (uk_iface->iface_rx_thread_running) {
-		uk_sched_thread_sleep(32000UL);
+		uk_sched_thread_sleep(70000UL);
 
 		uint64_t start_loop = rdtsc();
 
@@ -168,7 +168,7 @@ static void ndpip_uk_rx_thread(void *argp)
 
 		uint64_t delta = end_loop - before;
 
-		if (delta > 10000000000UL) {
+		if (delta > 5000000000UL) {
 			printf("PERF: delta=%lu; prologue=%lu; loop=%lu; loop_alloc=%lu; loop_release=%lu; iloop=%lu; illop_tx=%lu; loop_rx=%lu;\n", delta, prologue, loop, loop_alloc, loop_release, iloop, iloop_tx, loop_rx);
 			printf("%lu/%lu/%hu\n", replies_len_a / iter, pkt_cnt_a / iter, uk_iface->iface_rx_burst_size);
 
