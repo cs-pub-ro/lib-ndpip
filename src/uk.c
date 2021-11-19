@@ -143,11 +143,6 @@ static void ndpip_uk_timers_thread(void *argp)
 	}
 }
 
-void ndpip_uk_timers_add(struct ndpip_timer *timer)
-{
-	ndpip_list_add(&ndpip_uk_timers_head, (void *) timer);
-}
-
 int ndpip_uk_register_iface(int netdev_id, bool intr)
 {
 	if ((&iface)->iface_netdev_id >= 0)

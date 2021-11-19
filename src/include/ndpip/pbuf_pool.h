@@ -3,12 +3,4 @@
 
 struct ndpip_pbuf_pool;
 
-#ifdef NDPIP_UK
-
-#define ndpip_pbuf_pool_alloc ndpip_uk_pbuf_pool_alloc
-#define ndpip_pbuf_pool_request ndpip_uk_pbuf_pool_request
-#define ndpip_pbuf_pool_release ndpip_uk_pbuf_pool_release
-
-#endif
-
 #endif

@@ -1,0 +1,36 @@
+APP = eqds-tcp-perf
+
+PKGCONF = pkg-config
+
+SRCS-y += src/tcp.c
+SRCS-y += src/socket.c
+SRCS-y += src/util.c
+SRCS-y += src/workhorse.c
+SRCS-y += src/linux_dpdk.c
+SRCS-y += libdnet-imported/src/ip-util.c
+
+OBJS-y = $(patsubst %.c,%.c.o,$(SRCS-y))
+
+LIB = libndpip.a
+
+CFLAGS += -O3
+CFLAGS += -Wall
+CFLAGS += -Wno-address-of-packed-member
+CFLAGS += -g
+CFLAGS += -DNDPIP_LINUX_DPDK
+CFLAGS += -Isrc/include
+CFLAGS += -Iinclude
+CFLAGS += -Ilibdnet-imported/include
+
+CFLAGS += $(shell $(PKGCONF) --cflags libdpdk)
+
+all: $(LIB)
+
+$(OBJS-y):
+	$(CC) -c $(CFLAGS) -o $@ $(patsubst %.c.o,%.c,$@)
+
+$(LIB): $(OBJS-y)
+	$(AR) rcs $@ $(OBJS-y)
+
+clean:
+	rm -f $(OBJS-y) $(LIB)

@@ -4,6 +4,7 @@
 #include "ndpip/socket.h"
 #include "ndpip/tcp.h"
 #include "ndpip/util.h"
+#include "ndpip/workhorse.h"
 
 
 #define NDPIP_TODO_SOCKET_XMIT_RING_LENGTH (1 << 20)
@@ -83,7 +84,7 @@ struct ndpip_socket *ndpip_socket_new(int domain, int type, int protocol)
 	return sock;
 }
 
-int socket(int domain, int type, int protocol)
+int ndpip_socket(int domain, int type, int protocol)
 {
 	struct ndpip_socket *sock = ndpip_socket_new(domain, type, protocol);
 	if (sock == NULL)
@@ -92,7 +93,7 @@ int socket(int domain, int type, int protocol)
 	return sock->socket_id;
 }
 
-int bind(int sockfd, const struct sockaddr *addr, socklen_t addrlen)
+int ndpip_bind(int sockfd, const struct sockaddr *addr, socklen_t addrlen)
 {
 	if (sockfd < 0) {
 		errno = EBADF;
@@ -138,7 +139,7 @@ int bind(int sockfd, const struct sockaddr *addr, socklen_t addrlen)
 	return 0;
 }
 
-int listen(int sockfd, int backlog)
+int ndpip_listen(int sockfd, int backlog)
 {
 	(void) backlog;
 
@@ -163,7 +164,7 @@ int listen(int sockfd, int backlog)
 	return 0;
 }
 
-int connect(int sockfd, const struct sockaddr *addr, socklen_t addrlen)
+int ndpip_connect(int sockfd, const struct sockaddr *addr, socklen_t addrlen)
 {
 	if (sockfd < 0) {
 		errno = EBADF;
@@ -229,12 +230,12 @@ int connect(int sockfd, const struct sockaddr *addr, socklen_t addrlen)
 	ndpip_tcp_send(sock, pb, 1);
 
 	while (sock->state != CONNECTED)
-		uk_sched_thread_sleep(1000UL);
+		ndpip_nanosleep(1000UL);
 
 	return 0;
 }
 
-int accept(int sockfd, struct sockaddr *addr, socklen_t *addrlen) {
+int ndpip_accept(int sockfd, struct sockaddr *addr, socklen_t *addrlen) {
 	if (sockfd < 0) {
 		errno = EBADF;
 		return -1;
@@ -258,7 +259,7 @@ int accept(int sockfd, struct sockaddr *addr, socklen_t *addrlen) {
 	}
 
 	while (asock->state != CONNECTED)
-		uk_sched_thread_sleep(1000UL);
+		ndpip_nanosleep(1000UL);
 
 	if ((addr != NULL) && (addrlen != NULL)) {
 		*((struct sockaddr_in *) addr) = asock->remote;
@@ -357,7 +358,7 @@ struct ndpip_socket *ndpip_socket_accept(struct ndpip_socket *sock)
 	return asock;
 }
 
-int setsockopt(int sockfd, int level, int optname, const void *optval, socklen_t optlen)
+int ndpip_setsockopt(int sockfd, int level, int optname, const void *optval, socklen_t optlen)
 {
 	if (sockfd < 0) {
 		errno = EBADF;

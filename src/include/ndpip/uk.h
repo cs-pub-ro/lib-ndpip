@@ -68,8 +68,6 @@ int ndpip_uk_iface_xmit(struct ndpip_iface *iface, struct ndpip_pbuf **pb, uint1
 
 void ndpip_uk_nanosleep(uint64_t nsec);
 
-void ndpip_uk_timers_add(struct ndpip_timer *timer);
-
 #define ndpip_iface_get_by_inaddr ndpip_uk_iface_get_by_inaddr
 #define ndpip_iface_get_ethaddr ndpip_uk_iface_get_ethaddr
 #define ndpip_iface_get_inaddr ndpip_uk_iface_get_inaddr
@@ -80,6 +78,16 @@ void ndpip_uk_timers_add(struct ndpip_timer *timer);
 #define ndpip_iface_get_pbuf_pool_tx(iface) (((struct ndpip_uk_iface *) (iface))->iface_pbuf_pool_tx)
 #define ndpip_iface_resolve_arp ndpip_uk_iface_resolve_arp
 
-#define ndpip_timers_add ndpip_uk_timers_add
+#define ndpip_pbuf_data ndpip_uk_pbuf_data
+#define ndpip_pbuf_length ndpip_uk_pbuf_length
+#define ndpip_pbuf_offset ndpip_uk_pbuf_offset
+#define ndpip_pbuf_resize ndpip_uk_pbuf_resize
+#define ndpip_pbuf_refcount_get ndpip_uk_pbuf_refcount_get
+#define ndpip_pbuf_refcount_add ndpip_uk_pbuf_refcount_add
+#define ndpip_pbuf_refcount_set ndpip_uk_pbuf_refcount_set
+
+#define ndpip_pbuf_pool_alloc ndpip_uk_pbuf_pool_alloc
+#define ndpip_pbuf_pool_request ndpip_uk_pbuf_pool_request
+#define ndpip_pbuf_pool_release ndpip_uk_pbuf_pool_release
 
 #endif

@@ -6,7 +6,12 @@
 
 #endif
 
+#ifdef NDPIP_LINUX_DPDK
+
+#include <stdlib.h>
 #include <string.h>
+
+#endif
 
 struct ndpip_ring *ndpip_ring_alloc(size_t length, size_t esize)
 {

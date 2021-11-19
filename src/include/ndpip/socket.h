@@ -1,6 +1,7 @@
 #ifndef _SRC_INCLUDE_NDPIP_SOCKET_H_
 #define _SRC_INCLUDE_NDPIP_SOCKET_H_
 
+#include <netinet/ether.h>
 #include <netinet/ip.h>
 #include <netinet/tcp.h>
 
@@ -8,8 +9,14 @@
 
 #include "../../../include/ndpip/socket.h"
 #include "ndpip/util.h"
-#include "ndpip/uk.h"
 
+#ifdef NDPIP_UK
+#include "ndpip/uk.h"
+#endif
+
+#ifdef NDPIP_LINUX_DPDK
+#include "ndpip/linux_dpdk.h"
+#endif
 
 struct ndpip_socket {
 	struct ndpip_list_head list;
