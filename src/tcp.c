@@ -282,8 +282,6 @@ int ndpip_tcp_feed(struct ndpip_socket *sock, struct sockaddr_in *remote, struct
 		if (th_flags != TH_ACK)
 			goto err;
 
-		sock->tcp_ack -= 6;
-
 		sock->state = CONNECTED;
 		return 0;
 	}
@@ -311,8 +309,7 @@ int ndpip_tcp_feed(struct ndpip_socket *sock, struct sockaddr_in *remote, struct
 		}
 
 		ndpip_pbuf_offset(pb, -th_hlen);
-		ndpip_sock_free(sock, &pb, 1, true);
-//		ndpip_ring_push(sock->recv_ring, &pb);
+		ndpip_ring_push(sock->recv_ring, &pb);
 
 		ndpip_tcp_build_meta(sock, TH_ACK, rpb);
 		return 1;

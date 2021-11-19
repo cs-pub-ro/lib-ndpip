@@ -23,12 +23,11 @@ struct ndpip_socket *ndpip_socket_get_by_peer(struct sockaddr_in *local, struct 
 		if ((sock->local.sin_addr.s_addr == local->sin_addr.s_addr) &&
 			(sock->local.sin_port == local->sin_port)) {
 
-			if (((sock->state == CONNECTING) || (sock->state == ACCEPTING) || (sock->state == CONNECTED)) &&
+			if (!((sock->state == LISTENING) || (sock->state == CLOSED)) &&
 				(sock->remote.sin_addr.s_addr == remote->sin_addr.s_addr) &&
 				(sock->remote.sin_port == remote->sin_port)) {
 
-				ret = sock;
-				break;
+				return sock;
 			}
 
 			if (sock->state == LISTENING)
