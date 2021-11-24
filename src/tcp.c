@@ -209,20 +209,32 @@ int ndpip_tcp_feed(struct ndpip_socket *sock, struct sockaddr_in *remote, struct
 	uint16_t th_hlen = th->th_off << 2;
 	uint16_t data_len = th_len - th_hlen;
 
-	if ((sock->state != LISTENING) && (th_flags & TH_ACK)) {
-		if ((tcp_ack > (sock->tcp_seq + 1)) || (tcp_ack < sock->tcp_last_ack))
-			goto err;
+	bool retransmission = false;
 
-		if (tcp_seq != sock->tcp_ack) {
-			printf("TCPERR: %u != %u\n", tcp_seq, sock->tcp_ack);
-			goto err;
-		}
+	if (sock->state != LISTENING) {
+		if (th_flags & TH_ACK)
+			if ((tcp_ack > (sock->tcp_seq + 1)) || (tcp_ack < sock->tcp_last_ack))
+				goto err;
+
+		if (tcp_seq < sock->tcp_good_ack)
+			retransmission = true;
+
+		if (tcp_seq > sock->tcp_good_ack)
+			sock->tcp_recovery = true;
+
+		if (tcp_seq == sock->tcp_good_ack)
+			sock->tcp_recovery = false;
 
 		sock->tcp_last_ack = tcp_ack;
 		if (sock->tcp_last_ack == (sock->tcp_seq + 1))
 			ndpip_timer_disarm(sock->socket_timer_rto);
 	}
 
+	if (sock->tcp_recovery) {
+		ndpip_tcp_build_meta(sock, TH_ACK, rpb);
+		return 1;
+	}
+	
 	uint32_t ack_inc;
 
 	if (data_len == 0) {
@@ -234,6 +246,9 @@ int ndpip_tcp_feed(struct ndpip_socket *sock, struct sockaddr_in *remote, struct
 		ack_inc = data_len;
 
 	sock->tcp_ack = tcp_seq + ack_inc;
+
+	if (!retransmission && !sock->tcp_recovery)
+		sock->tcp_good_ack = sock->tcp_ack;
 
 	if (sock->state == LISTENING) {
 		if (th_flags != TH_SYN)
@@ -255,7 +270,8 @@ int ndpip_tcp_feed(struct ndpip_socket *sock, struct sockaddr_in *remote, struct
 	        if (ndpip_tcp_build_xmit_template(asock) < 0)
 			goto err;
 
-		asock->tcp_ack = tcp_seq + 1;
+		asock->tcp_ack = sock->tcp_ack;
+		asock->tcp_good_ack = asock->tcp_ack;
 		ndpip_tcp_build_syn(asock, true, rpb);
 		asock->tcp_seq++;
 
@@ -302,17 +318,23 @@ int ndpip_tcp_feed(struct ndpip_socket *sock, struct sockaddr_in *remote, struct
 		}
 
 		if (data_len == 0) {
-			if (!(th_flags & TH_ACK))
-				goto err;
-			else
+			if (th_flags == TH_ACK)
 				return 0;
+			else {
+				printf("%hu\n", ndpip_pbuf_length(pb));
+				goto err;
+			}
 		}
 
-		ndpip_pbuf_offset(pb, -th_hlen);
-		ndpip_ring_push(sock->recv_ring, &pb);
+		if (retransmission)
+			ndpip_sock_free(sock, &pb, 1, true);
+		else {
+			ndpip_pbuf_offset(pb, -th_hlen);
+			ndpip_ring_push(sock->recv_ring, &pb);
+		}
 
 		ndpip_tcp_build_meta(sock, TH_ACK, rpb);
-		return 1;
+		return 2;
 	}
 
 	if (sock->state == CLOSING) {
@@ -329,5 +351,6 @@ err:
 		sock->state = CLOSED;
 
 	ndpip_tcp_build_meta(sock, TH_RST, rpb);
+
 	return 1;
 }

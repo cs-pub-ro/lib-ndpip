@@ -75,7 +75,9 @@ struct ndpip_socket *ndpip_socket_new(int domain, int type, int protocol)
 	sock->tcp_seq = 0;
 	sock->tcp_ack = 0;
 	sock->tcp_last_ack = 0;
+	sock->tcp_good_ack = 0;
 	sock->tcp_win_scale = 1;
+	sock->tcp_recovery = false;
 
 	sock->accept_queue = (struct ndpip_list_head) { &sock->accept_queue, &sock->accept_queue };
 

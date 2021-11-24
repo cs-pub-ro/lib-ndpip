@@ -19,6 +19,7 @@
 #include <netinet/ip.h>
 #include <netinet/tcp.h>
 
+#include <rte_mbuf.h>
 int ndpip_rx_thread(void *argp)
 {
 	struct ndpip_iface *iface = argp;
@@ -50,24 +51,28 @@ int ndpip_rx_thread(void *argp)
 
 		for (uint16_t idx = 0; idx < pkt_cnt; idx++) {
 			struct ndpip_pbuf *pb = pkts[idx];
+
+			if (ndpip_pbuf_length(pb) < (sizeof(struct ethhdr) + sizeof(struct iphdr) + sizeof(struct tcphdr)))
+				goto free_pkt;
+
 			struct ethhdr *eth = ndpip_pbuf_data(pb);
 
 			if (memcmp(eth->h_dest, ndpip_iface_get_ethaddr(iface), ETH_ALEN) != 0)
-				continue;
+				goto free_pkt;
 
 			if (ntohs(eth->h_proto) != ETH_P_IP)
-				continue;
+				goto free_pkt;
 
 			struct iphdr *iph = ((void *) eth) + sizeof(struct ethhdr);
 
 			if (!((iph->ihl == 5) && (iph->version == 4)))
-				continue;
+				goto free_pkt;
 
 			if (iph->daddr != ndpip_iface_get_inaddr(iface)->s_addr)
-				continue;
+				goto free_pkt;
 
 			if (iph->protocol != IPPROTO_TCP)
-				continue;
+				goto free_pkt;
 
 			struct tcphdr *th = ((void *) iph) + sizeof(struct iphdr);
 
@@ -85,12 +90,18 @@ int ndpip_rx_thread(void *argp)
 
 			struct ndpip_socket *sock = ndpip_socket_get_by_peer(&local, &remote);
 			if (sock == NULL)
-				continue;
+				goto free_pkt;
 
 			ndpip_pbuf_offset(pb, -(int) (sizeof(struct ethhdr) + sizeof(struct iphdr)));
 			int r = ndpip_tcp_feed(sock, &remote, pb, replies[replies_len]);
 			if (r > 0)
 				replies_len++;
+
+			if (r == 2)
+				continue;
+
+free_pkt:
+			ndpip_pbuf_pool_release(ndpip_iface_get_pbuf_pool_rx(iface), &pb, 1);
 		}
 
 		if (replies_len > 0)

@@ -7,6 +7,7 @@
 #define NDPIP_TODO_NB_MBUF (1 << 16)
 #define NDPIP_TODO_MEMPOOL_CACHE_SZ 256
 #define NDPIP_TODO_MBUF_SIZE (3 * 4096)
+#define NDPIP_TODO_MTU 1500
 
 static struct ndpip_linux_dpdk_iface iface = {
         .iface_netdev_id = -1
@@ -17,7 +18,8 @@ int ndpip_linux_dpdk_pbuf_pool_request(struct ndpip_pbuf_pool *pool, struct ndpi
 	struct rte_mempool *p = (void *) pool;
 	struct rte_mbuf **mb = (void *) pb;
 
-	rte_pktmbuf_alloc_bulk(p, mb, *count);
+	if (rte_pktmbuf_alloc_bulk(p, mb, *count) != 0)
+		return -1;
 
 	return 0;
 }
@@ -47,21 +49,19 @@ int ndpip_linux_dpdk_register_iface(int netdev_id)
 	(&iface)->iface_rx_queue_id = 0;
 	(&iface)->iface_tx_queue_id = 0;
 
-	rte_eth_macaddr_get((&iface)->iface_netdev_id, (void *) ndpip_linux_dpdk_iface_get_ethaddr((void *) &iface));
-
 	struct rte_eth_conf conf;
 	memset(&conf, 0, sizeof(struct rte_eth_conf));
-        conf.rxmode.max_rx_pkt_len = 1440;
+        conf.rxmode.max_rx_pkt_len = NDPIP_TODO_MTU;
 
 	if (rte_eth_dev_configure((&iface)->iface_netdev_id, 1, 1, &conf) < 0)
 		return -1;
 
-	(&iface)->iface_pbuf_pool_rx = (void *) rte_pktmbuf_pool_create("ndpip_pool_rx", NDPIP_TODO_NB_MBUF, NDPIP_TODO_MEMPOOL_CACHE_SZ, 1440, NDPIP_TODO_MBUF_SIZE, rte_socket_id());
+	(&iface)->iface_pbuf_pool_rx = (void *) rte_pktmbuf_pool_create("ndpip_pool_rx", NDPIP_TODO_NB_MBUF, NDPIP_TODO_MEMPOOL_CACHE_SZ, 0, NDPIP_TODO_MBUF_SIZE, rte_socket_id());
 	if ((&iface)->iface_pbuf_pool_rx == NULL)
 		return -1;
 
-	(&iface)->iface_pbuf_pool_tx = (void *) rte_pktmbuf_pool_create("ndpip_pool_tx", NDPIP_TODO_NB_MBUF, NDPIP_TODO_MEMPOOL_CACHE_SZ, 1440, NDPIP_TODO_MBUF_SIZE, rte_socket_id());
-	if ((&iface)->iface_pbuf_pool_rx == NULL)
+	(&iface)->iface_pbuf_pool_tx = (void *) rte_pktmbuf_pool_create("ndpip_pool_tx", NDPIP_TODO_NB_MBUF, NDPIP_TODO_MEMPOOL_CACHE_SZ, 0, NDPIP_TODO_MBUF_SIZE, rte_socket_id());
+	if ((&iface)->iface_pbuf_pool_tx == NULL)
 		return -1;
 
 	if (rte_eth_rx_queue_setup((&iface)->iface_netdev_id, (&iface)->iface_rx_queue_id, 2048, rte_eth_dev_socket_id((&iface)->iface_netdev_id), NULL, (void *) (&iface)->iface_pbuf_pool_rx) < 0)
@@ -81,14 +81,14 @@ int ndpip_linux_dpdk_start_iface(int netdev_id)
         if ((&iface)->iface_netdev_id != netdev_id)
                 return -1;
 
+	if (rte_eth_dev_start((&iface)->iface_netdev_id) < 0)
+		return -1;
+
 	(&iface)->iface_rx_thread_running = true;
 	(&iface)->iface_timers_thread_running = true;
 
-	rte_eal_remote_launch(ndpip_rx_thread, &iface, rte_get_next_lcore(-1, 1, 0));
-	rte_eal_remote_launch(ndpip_timers_thread, &iface, rte_get_next_lcore(-1, 0, 0));
-
-	if (rte_eth_dev_start((&iface)->iface_netdev_id) < 0)
-		return -1;
+	rte_eal_remote_launch(ndpip_rx_thread, &iface, rte_get_next_lcore(rte_lcore_id(), 1, 0));
+	rte_eal_remote_launch(ndpip_timers_thread, &iface, rte_lcore_id());
 
 	return 0;
 }
@@ -140,15 +140,24 @@ int ndpip_linux_dpdk_pbuf_offset(struct ndpip_pbuf *pbuf, int off)
 {
 	struct rte_mbuf *mb = (void *) pbuf;
 
-	mb->data_off -= off;
+	if (off < 0)
+		rte_pktmbuf_adj(mb, (uint16_t) -off);
+
+	if (off > 0)
+		rte_pktmbuf_prepend(mb, (uint16_t) off);
 
 	return 0;
 }
 int ndpip_linux_dpdk_pbuf_resize(struct ndpip_pbuf *pbuf, uint16_t len)
 {
 	struct rte_mbuf *mb = (void *) pbuf;
+	uint16_t pkt_len = ndpip_pbuf_length(pbuf);
 
-	mb->data_len = len;
+	if (len < pkt_len)
+		rte_pktmbuf_trim(mb, pkt_len - len);
+
+	if (len > pkt_len)
+		rte_pktmbuf_append(mb, len - pkt_len);
 
 	return 0;
 }
