@@ -13,6 +13,8 @@ static struct ndpip_linux_dpdk_iface iface = {
         .iface_netdev_id = -1
 };
 
+static uint64_t tsc_hz;
+
 int ndpip_linux_dpdk_pbuf_pool_request(struct ndpip_pbuf_pool *pool, struct ndpip_pbuf **pb, uint16_t *count)
 {
 	struct rte_mempool *p = (void *) pool;
@@ -42,6 +44,8 @@ void ndpip_linux_dpdk_thread_yield() {}
 
 int ndpip_linux_dpdk_register_iface(int netdev_id)
 {
+	tsc_hz = rte_get_tsc_hz();
+
         if ((&iface)->iface_netdev_id >= 0)
                 return -1;
 
@@ -264,4 +268,12 @@ int ndpip_linux_dpdk_set_rx_burst_size(int netdev_id, uint16_t iface_rx_burst_si
                 return -1;                               
 
         return 0;                 
+}
+
+void ndpip_linux_dpdk_time_now(struct timespec *req)
+{
+	uint64_t cycles = rte_get_tsc_cycles();
+
+	req->tv_sec = cycles / tsc_hz;
+	req->tv_nsec = (cycles % tsc_hz) * 1000000000UL / tsc_hz;
 }

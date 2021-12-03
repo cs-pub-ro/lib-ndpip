@@ -23,17 +23,9 @@
 int ndpip_rx_thread(void *argp)
 {
 	struct ndpip_iface *iface = argp;
-	uint64_t before = rdtsc();
 	uint16_t rx_burst_size = ndpip_iface_get_rx_burst_size(iface);
 
 	while (ndpip_iface_rx_thread_running(iface)) {
-		uint64_t now = rdtsc();
-
-		if ((now - before) > 1000000000UL) {
-			before = now;
-			ndpip_thread_yield();
-		}
-
 		uint16_t pkt_cnt = rx_burst_size;
 		struct ndpip_pbuf *pkts[pkt_cnt];
 
@@ -93,6 +85,7 @@ int ndpip_rx_thread(void *argp)
 				goto free_pkt;
 
 			ndpip_pbuf_offset(pb, -(int) (sizeof(struct ethhdr) + sizeof(struct iphdr)));
+			ndpip_pbuf_resize(pb, ntohs(iph->tot_len) - sizeof(struct iphdr));
 			int r = ndpip_tcp_feed(sock, &remote, pb, replies[replies_len]);
 			if (r > 0)
 				replies_len++;
@@ -108,6 +101,8 @@ free_pkt:
 			ndpip_iface_xmit(iface, replies, replies_len);
 
 		ndpip_pbuf_pool_release(ndpip_iface_get_pbuf_pool_tx(iface), replies + replies_len, pkt_cnt - replies_len);
+
+		ndpip_thread_yield();
 	}
 
 	return 0;

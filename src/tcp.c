@@ -230,10 +230,8 @@ int ndpip_tcp_feed(struct ndpip_socket *sock, struct sockaddr_in *remote, struct
 			ndpip_timer_disarm(sock->socket_timer_rto);
 	}
 
-	if (sock->tcp_recovery) {
-		ndpip_tcp_build_meta(sock, TH_ACK, rpb);
-		return 1;
-	}
+	if (sock->tcp_recovery)
+		return 0;
 	
 	uint32_t ack_inc;
 
@@ -320,10 +318,8 @@ int ndpip_tcp_feed(struct ndpip_socket *sock, struct sockaddr_in *remote, struct
 		if (data_len == 0) {
 			if (th_flags == TH_ACK)
 				return 0;
-			else {
-				printf("%hu\n", ndpip_pbuf_length(pb));
+			else
 				goto err;
-			}
 		}
 
 		if (retransmission)

@@ -28,6 +28,10 @@ int ndpip_linux_dpdk_pbuf_resize(struct ndpip_pbuf *pbuf, uint16_t len);
 
 int ndpip_linux_dpdk_set_rx_burst_size(int netdev_id, uint16_t iface_rx_burst_size);
 
+void ndpip_linux_dpdk_time_now(struct timespec *req);
+
+#define ndpip_time_now ndpip_linux_dpdk_time_now
+
 #define ndpip_pbuf_data ndpip_linux_dpdk_pbuf_data
 #define ndpip_pbuf_length ndpip_linux_dpdk_pbuf_length
 #define ndpip_pbuf_offset ndpip_linux_dpdk_pbuf_offset

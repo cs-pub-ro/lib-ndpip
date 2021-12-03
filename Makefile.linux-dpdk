@@ -1,5 +1,6 @@
 APP = eqds-tcp-perf
 
+AR = gcc-ar
 PKGCONF = pkg-config
 
 SRCS-y += src/tcp.c
@@ -17,6 +18,7 @@ CFLAGS += -O3
 CFLAGS += -Wall
 CFLAGS += -Wno-address-of-packed-member
 CFLAGS += -g
+CFLAGS += -flto
 CFLAGS += -DNDPIP_LINUX_DPDK
 CFLAGS += -Isrc/include
 CFLAGS += -Iinclude

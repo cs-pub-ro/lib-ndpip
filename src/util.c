@@ -8,6 +8,8 @@
 
 #ifdef NDPIP_LINUX_DPDK
 
+#include "ndpip/linux_dpdk.h"
+
 #include <stdlib.h>
 #include <string.h>
 
@@ -104,7 +106,7 @@ void ndpip_list_del(struct ndpip_list_head *entry)
 bool ndpip_timer_expired(struct ndpip_timer *timer)
 {
 	struct timespec now;
-	clock_gettime(CLOCK_MONOTONIC, &now);
+	ndpip_time_now(&now);
 
 	if (((&now)->tv_sec >= timer->timeout.tv_sec) &&
 		((&now)->tv_nsec >= timer->timeout.tv_nsec))

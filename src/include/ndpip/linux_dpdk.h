@@ -54,17 +54,18 @@ uint16_t ndpip_iface_get_rx_burst_size(struct ndpip_iface *iface);
 #define ndpip_iface_get_by_inaddr ndpip_linux_dpdk_iface_get_by_inaddr
 #define ndpip_iface_get_ethaddr ndpip_linux_dpdk_iface_get_ethaddr
 #define ndpip_iface_get_inaddr ndpip_linux_dpdk_iface_get_inaddr
-#define ndpip_iface_xmit ndpip_linux_dpdk_iface_xmit
-#define ndpip_nanosleep ndpip_linux_dpdk_nanosleep
-#define ndpip_thread_yield ndpip_linux_dpdk_thread_yield
-
 #define ndpip_iface_get_pbuf_pool_rx(iface) (((struct ndpip_linux_dpdk_iface *) (iface))->iface_pbuf_pool_rx)
 #define ndpip_iface_get_pbuf_pool_tx(iface) (((struct ndpip_linux_dpdk_iface *) (iface))->iface_pbuf_pool_tx)
 #define ndpip_iface_resolve_arp ndpip_linux_dpdk_iface_resolve_arp
 
+#define ndpip_nanosleep ndpip_linux_dpdk_nanosleep
+#define ndpip_thread_yield ndpip_linux_dpdk_thread_yield
+
 #define ndpip_iface_rx_thread_running ndpip_linux_dpdk_iface_rx_thread_running
 #define ndpip_iface_timers_thread_running ndpip_linux_dpdk_iface_timers_thread_running
+
 #define ndpip_iface_rx_burst ndpip_linux_dpdk_iface_rx_burst
+#define ndpip_iface_xmit ndpip_linux_dpdk_iface_xmit
 
 #define ndpip_pbuf_data ndpip_linux_dpdk_pbuf_data
 #define ndpip_pbuf_length ndpip_linux_dpdk_pbuf_length
