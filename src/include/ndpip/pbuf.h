@@ -3,9 +3,4 @@
 
 #include "../../include/ndpip/pbuf.h"
 
-struct ndpip_pbuf_train {
-	struct ndpip_pbuf **train_pbufs;
-	size_t train_pbuf_count;
-};
-
 #endif

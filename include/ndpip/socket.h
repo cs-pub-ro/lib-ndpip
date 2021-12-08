@@ -14,7 +14,9 @@ int ndpip_connect(int sockfd, const struct sockaddr *addr, socklen_t addrlen);
 int ndpip_accept(int sockfd, struct sockaddr *addr, socklen_t *addrlen);
 
 int ndpip_setsockopt(int sockfd, int level, int optname, const void *optval, socklen_t optlen);
-ssize_t ndpip_recv(int sockfd, struct ndpip_pbuf **pb, size_t count);
-int ndpip_free(int sockfd, struct ndpip_pbuf **pb, size_t len);
+int ndpip_recv(int sockfd, struct ndpip_pbuf **pb, uint16_t count);
+int ndpip_send(int sockfd, struct ndpip_pbuf **pb, uint16_t count);
+int ndpip_free(int sockfd, struct ndpip_pbuf **pb, uint16_t len);
+int ndpip_alloc(int sockfd, struct ndpip_pbuf **pb, uint16_t len);
 
 #endif

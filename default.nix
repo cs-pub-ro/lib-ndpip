@@ -1,4 +1,4 @@
-{ pkgs, lib, stdenv, dpdk_19_11, libbsd, pkg-config }:
+{ pkgs, lib, stdenv, dpdk, libbsd, pkg-config }:
 
 stdenv.mkDerivation {
   name = "libndpip";
@@ -6,7 +6,7 @@ stdenv.mkDerivation {
   src = ./.;
 
   nativeBuildInputs = [ pkg-config ];
-  buildInputs = [ dpdk_19_11 libbsd ];
+  buildInputs = [ dpdk libbsd ];
 
   dontStrip = true;
 

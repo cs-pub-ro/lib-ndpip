@@ -102,16 +102,11 @@ int ndpip_linux_dpdk_iface_xmit(struct ndpip_iface *iface, struct ndpip_pbuf **p
 	struct rte_mbuf **mb = (void *) pb;
 	struct ndpip_linux_dpdk_iface *iface_linux_dpdk = (void *) iface;
 
-	for (uint16_t idx = 0; idx < cnt;) {
-		uint16_t r_cnt = cnt - idx;
-
-		r_cnt = rte_eth_tx_burst(
+	for (uint16_t idx = 0; idx < cnt;)
+		idx += rte_eth_tx_burst(
 			iface_linux_dpdk->iface_netdev_id,
 			iface_linux_dpdk->iface_tx_queue_id,
-			mb + idx, r_cnt);
-
-                idx += r_cnt;            
-        }
+			mb + idx, cnt - idx);
 
 	return 0;
 }
@@ -121,7 +116,12 @@ int ndpip_linux_dpdk_iface_rx_burst(struct ndpip_iface *iface, struct ndpip_pbuf
 	struct rte_mbuf **mb = (void *) pb;
 	struct ndpip_linux_dpdk_iface *iface_linux_dpdk = (void *) iface;
 
-	*cnt = rte_eth_rx_burst(iface_linux_dpdk->iface_netdev_id, iface_linux_dpdk->iface_rx_queue_id, mb, *cnt);
+	uint16_t r_cnt = 0;
+
+	for (int i = 0; (i < 1000) && (r_cnt < *cnt); i++)
+		r_cnt += rte_eth_rx_burst(iface_linux_dpdk->iface_netdev_id, iface_linux_dpdk->iface_rx_queue_id, mb + r_cnt, *cnt - r_cnt);
+
+	*cnt = r_cnt;
 
 	return 0;
 }

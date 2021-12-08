@@ -132,16 +132,16 @@ void ndpip_tcp_rto_handler(void *argp) {
 	return;
 	struct ndpip_socket *sock = argp;
 
-	struct ndpip_pbuf_train pbt;
-	size_t pbt_count = 1;
+	struct ndpip_pbuf *pb;
+	size_t pb_count = 1;
 
-	if (ndpip_ring_pop(sock->xmit_ring, &pbt_count, &pbt) < 0)
+	if (ndpip_ring_pop(sock->xmit_ring, &pb_count, &pb) < 0)
 		return;
 
-	if ((&pbt)->train_pbuf_count != 1)
+	if (pb_count != 1)
 		return;
 
-	ndpip_tcp_send(sock, &((&pbt)->train_pbufs)[0], 1);
+	ndpip_tcp_send(sock, &pb, 1);
 }
 
 uint16_t ndpip_tcp_max_xmit(struct ndpip_socket *sock, struct ndpip_pbuf **pb, uint16_t cnt)
@@ -154,30 +154,14 @@ uint16_t ndpip_tcp_max_xmit(struct ndpip_socket *sock, struct ndpip_pbuf **pb, u
 
 int ndpip_tcp_send(struct ndpip_socket *sock, struct ndpip_pbuf **pb, uint16_t cnt)
 {
-	/*
-	struct ndpip_pbuf_train pbt = {
-		.train_pbufs = pb,
-		.train_pbuf_count = cnt
-	};
-
-	ndpip_ring_push(sock->xmit_ring, &pbt);
-	*/
-
 	uint16_t cnt2 = ndpip_tcp_max_xmit(sock, pb, cnt);
 	if (cnt2 == 0)
 		return 0;
 
-	/*
-	if (cnt2 == cnt) {
-		sock->xmit_ring_unsent_off++;
-		sock->xmit_ring_unsent_train_off = 0;
-	} else
-		sock->xmit_ring_unsent_train_off = cnt2;
-	*/
+	ndpip_ring_push(sock->xmit_ring, pb, cnt2);
 
-	// ndpip_iface_xmit(sock->socket_iface, pb, cnt2);
+	ndpip_iface_xmit(sock->socket_iface, pb, cnt2);
 
-	/*
 	struct timespec expire;
 	clock_gettime(CLOCK_MONOTONIC, &expire);
 
@@ -185,16 +169,8 @@ int ndpip_tcp_send(struct ndpip_socket *sock, struct ndpip_pbuf **pb, uint16_t c
 
 	if (!ndpip_timer_armed(sock->socket_timer_rto) && (sock->tcp_seq < sock->tcp_last_ack))
 		ndpip_timer_arm(sock->socket_timer_rto, &expire);
-	*/
 
-	return 0;
-}
-
-struct tcphdr *ndpip_tcp_recv_one(struct ndpip_socket *sock)
-{
-	(void) sock;
-
-	return NULL;
+	return cnt2;
 }
 
 int ndpip_tcp_feed(struct ndpip_socket *sock, struct sockaddr_in *remote, struct ndpip_pbuf *pb, struct ndpip_pbuf *rpb)
@@ -209,21 +185,23 @@ int ndpip_tcp_feed(struct ndpip_socket *sock, struct sockaddr_in *remote, struct
 	uint16_t th_hlen = th->th_off << 2;
 	uint16_t data_len = th_len - th_hlen;
 
-	bool retransmission = false;
+	sock->tcp_retransmission = false;
 
 	if (sock->state != LISTENING) {
 		if (th_flags & TH_ACK)
 			if ((tcp_ack > (sock->tcp_seq + 1)) || (tcp_ack < sock->tcp_last_ack))
 				goto err;
 
-		if (tcp_seq < sock->tcp_good_ack)
-			retransmission = true;
+		if (sock->state != CONNECTING) {
+			if (tcp_seq < sock->tcp_good_ack)
+				sock->tcp_retransmission = true;
 
-		if (tcp_seq > sock->tcp_good_ack)
-			sock->tcp_recovery = true;
+			if (tcp_seq > sock->tcp_good_ack)
+				sock->tcp_recovery = true;
 
-		if (tcp_seq == sock->tcp_good_ack)
-			sock->tcp_recovery = false;
+			if (tcp_seq == sock->tcp_good_ack)
+				sock->tcp_recovery = false;
+		}
 
 		sock->tcp_last_ack = tcp_ack;
 		if (sock->tcp_last_ack == (sock->tcp_seq + 1))
@@ -245,7 +223,7 @@ int ndpip_tcp_feed(struct ndpip_socket *sock, struct sockaddr_in *remote, struct
 
 	sock->tcp_ack = tcp_seq + ack_inc;
 
-	if (!retransmission && !sock->tcp_recovery)
+	if (!sock->tcp_retransmission && !sock->tcp_recovery)
 		sock->tcp_good_ack = sock->tcp_ack;
 
 	if (sock->state == LISTENING) {
@@ -322,14 +300,15 @@ int ndpip_tcp_feed(struct ndpip_socket *sock, struct sockaddr_in *remote, struct
 				goto err;
 		}
 
-		if (retransmission)
+		if (sock->tcp_retransmission)
 			ndpip_sock_free(sock, &pb, 1, true);
 		else {
 			ndpip_pbuf_offset(pb, -th_hlen);
-			ndpip_ring_push(sock->recv_ring, &pb);
+			ndpip_ring_push(sock->recv_ring, &pb, 1);
 		}
 
 		ndpip_tcp_build_meta(sock, TH_ACK, rpb);
+
 		return 2;
 	}
 

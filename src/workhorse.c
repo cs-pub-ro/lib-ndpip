@@ -19,11 +19,14 @@
 #include <netinet/ip.h>
 #include <netinet/tcp.h>
 
-#include <rte_mbuf.h>
 int ndpip_rx_thread(void *argp)
 {
 	struct ndpip_iface *iface = argp;
 	uint16_t rx_burst_size = ndpip_iface_get_rx_burst_size(iface);
+
+	uint64_t iter = 0;
+	uint64_t pkt_cnt_a = 0;
+	uint64_t replies_len_a = 0;
 
 	while (ndpip_iface_rx_thread_running(iface)) {
 		uint16_t pkt_cnt = rx_burst_size;
@@ -33,6 +36,9 @@ int ndpip_rx_thread(void *argp)
 
 		if ((r < 0) || (pkt_cnt == 0))
 			continue;
+
+		bool win = true;
+		struct ndpip_socket *last_sock = NULL;
 
 		uint16_t replies_len = 0;
 		struct ndpip_pbuf *replies[pkt_cnt];
@@ -84,23 +90,56 @@ int ndpip_rx_thread(void *argp)
 			if (sock == NULL)
 				goto free_pkt;
 
+			if (sock->tcp_recovery || sock->tcp_retransmission)
+				win = false;
+
 			ndpip_pbuf_offset(pb, -(int) (sizeof(struct ethhdr) + sizeof(struct iphdr)));
 			ndpip_pbuf_resize(pb, ntohs(iph->tot_len) - sizeof(struct iphdr));
 			int r = ndpip_tcp_feed(sock, &remote, pb, replies[replies_len]);
 			if (r > 0)
 				replies_len++;
 
+			if (r != 2)
+				win = false;
+
+			if (sock->tcp_recovery || sock->tcp_retransmission)
+				win = false;
+
+			if ((last_sock != NULL) && (sock != last_sock))
+				win = false;
+
 			if (r == 2)
 				continue;
+
+			last_sock = sock;
 
 free_pkt:
 			ndpip_pbuf_pool_release(ndpip_iface_get_pbuf_pool_rx(iface), &pb, 1);
 		}
-
-		if (replies_len > 0)
-			ndpip_iface_xmit(iface, replies, replies_len);
+#define SKIP 8
+		win = false;
+		if (replies_len > 0) {
+			if (win && (replies_len > SKIP)) {
+				ndpip_pbuf_pool_release(ndpip_iface_get_pbuf_pool_tx(iface), replies, replies_len - SKIP);
+				ndpip_iface_xmit(iface, replies + replies_len - SKIP, SKIP);
+				replies_len_a += SKIP;
+			} else {
+				ndpip_iface_xmit(iface, replies, replies_len);
+				replies_len_a += replies_len;
+			}
+		}
 
 		ndpip_pbuf_pool_release(ndpip_iface_get_pbuf_pool_tx(iface), replies + replies_len, pkt_cnt - replies_len);
+
+		pkt_cnt_a += pkt_cnt;
+		iter++;
+
+		if (iter >= 50000UL) {
+			printf("avg_burst=%lu; avg_replies=%lu;\n", pkt_cnt_a / iter, replies_len_a / iter);
+			replies_len_a = 0;
+			pkt_cnt_a = 0;
+			iter = 0;
+		}
 
 		ndpip_thread_yield();
 	}

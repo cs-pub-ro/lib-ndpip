@@ -42,9 +42,6 @@ struct ndpip_socket {
 	uint8_t xmit_template[sizeof(struct ethhdr) + sizeof(struct iphdr) + sizeof(struct tcphdr)];
 
 	struct ndpip_ring *xmit_ring;
-	size_t xmit_ring_unsent_off;
-	uint16_t xmit_ring_unsent_train_off;
-
 	struct ndpip_ring *recv_ring;
 
 	struct ndpip_timer *socket_timer_rto;
@@ -54,11 +51,13 @@ struct ndpip_socket {
 	uint8_t tcp_win_scale;
 
 	bool tcp_recovery;
+	bool tcp_retransmission;
 };
 
 struct ndpip_socket *ndpip_socket_new(int domain, int type, int protocol);
 struct ndpip_socket *ndpip_socket_accept(struct ndpip_socket *sock);
 struct ndpip_socket *ndpip_socket_get_by_peer(struct sockaddr_in *local, struct sockaddr_in *peer);
-int ndpip_sock_free(struct ndpip_socket *sock, struct ndpip_pbuf **pb, size_t len, bool rx);
+int ndpip_sock_free(struct ndpip_socket *sock, struct ndpip_pbuf **pb, uint16_t len, bool rx);
+int ndpip_sock_alloc(struct ndpip_socket *sock, struct ndpip_pbuf **pb, uint16_t len, bool rx);
 
 #endif

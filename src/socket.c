@@ -63,10 +63,7 @@ struct ndpip_socket *ndpip_socket_new(int domain, int type, int protocol)
 	sock->local = (struct sockaddr_in) { .sin_addr.s_addr = 0, .sin_port = 0 };
 	sock->remote = (struct sockaddr_in) { .sin_addr.s_addr = 0, .sin_port = 0 };
 
-	sock->xmit_ring = ndpip_ring_alloc(NDPIP_TODO_SOCKET_XMIT_RING_LENGTH, sizeof(struct ndpip_pbuf_train));
-	sock->xmit_ring_unsent_off = 0;
-	sock->xmit_ring_unsent_train_off = 0;
-
+	sock->xmit_ring = ndpip_ring_alloc(NDPIP_TODO_SOCKET_XMIT_RING_LENGTH, sizeof(struct ndpip_pbuf *));
 	sock->recv_ring = ndpip_ring_alloc(NDPIP_TODO_SOCKET_RECV_RING_LENGTH, sizeof(struct ndpip_pbuf *));
 
 	sock->socket_timer_rto = ndpip_timer_alloc(ndpip_tcp_rto_handler, (void *) sock);
@@ -78,6 +75,7 @@ struct ndpip_socket *ndpip_socket_new(int domain, int type, int protocol)
 	sock->tcp_good_ack = 0;
 	sock->tcp_win_scale = 1;
 	sock->tcp_recovery = false;
+	sock->tcp_retransmission = false;
 
 	sock->accept_queue = (struct ndpip_list_head) { &sock->accept_queue, &sock->accept_queue };
 
@@ -126,8 +124,7 @@ int ndpip_bind(int sockfd, const struct sockaddr *addr, socklen_t addrlen)
 	struct sockaddr_in *addr_in = (void *) addr;
 
 	ndpip_list_foreach(struct ndpip_socket, sock, &ndpip_sockets_head)
-		if ((memcmp(&sock->local.sin_addr, &addr_in->sin_addr, sizeof(struct sockaddr_in)) == 0)
-			&& (sock->local.sin_port == addr_in->sin_port)) {
+		if (memcmp(&sock->local, &addr_in, sizeof(struct sockaddr_in)) == 0) {
 
 			errno = EADDRINUSE;
 			return -1;
@@ -271,7 +268,7 @@ int ndpip_accept(int sockfd, struct sockaddr *addr, socklen_t *addrlen) {
 	return asock->socket_id;
 }
 
-ssize_t ndpip_recv(int sockfd, struct ndpip_pbuf **pb, size_t count)
+int ndpip_recv(int sockfd, struct ndpip_pbuf **pb, uint16_t count)
 {
 	if (sockfd < 0) {
 		errno = EBADF;
@@ -301,15 +298,42 @@ ssize_t ndpip_recv(int sockfd, struct ndpip_pbuf **pb, size_t count)
 		return -1;
 	}
 
-	if (ndpip_ring_pop(sock->recv_ring, &count, pb) < 0) {
+	size_t rcount = count;
+	if (ndpip_ring_pop(sock->recv_ring, &rcount, pb) < 0) {
 		errno = EFAULT;
 		return -1;
 	}
 	
-	return count;
+	return rcount;
 }
 
-int ndpip_free(int sockfd, struct ndpip_pbuf **pb, size_t len) {
+int ndpip_send(int sockfd, struct ndpip_pbuf **pb, uint16_t count)
+{
+	if (sockfd < 0) {
+		errno = EBADF;
+		return -1;
+	}
+
+	struct ndpip_socket *sock = ndpip_socket_get(sockfd);
+	if (sock == NULL) {
+		errno = ENOTSOCK;
+		return -1;
+	}
+
+	if ((sock->state != CONNECTED) && (sock->state != CLOSING)) {
+		errno = EINVAL;
+		return -1;
+	}
+
+	if (count == 0) {
+		errno = EINVAL;
+		return -1;
+	}
+
+	return ndpip_tcp_send(sock, pb, count);
+}
+
+int ndpip_free(int sockfd, struct ndpip_pbuf **pb, uint16_t len) {
 	if (sockfd < 0) {
 		errno = EBADF;
 		return -1;
@@ -327,7 +351,24 @@ int ndpip_free(int sockfd, struct ndpip_pbuf **pb, size_t len) {
 	return ndpip_sock_free(sock, pb, len, true);
 }
 
-int ndpip_sock_free(struct ndpip_socket *sock, struct ndpip_pbuf **pb, size_t len, bool rx)
+int ndpip_alloc(int sockfd, struct ndpip_pbuf **pb, uint16_t len) {
+	if (sockfd < 0) {
+		errno = EBADF;
+		return -1;
+	}
+
+	struct ndpip_socket *sock = ndpip_socket_get(sockfd);
+	if (sock == NULL) {
+		errno = ENOTSOCK;
+		return -1;
+	}
+
+	if (len == 0)
+		return 0;
+
+	return ndpip_sock_alloc(sock, pb, len, false);
+}
+int ndpip_sock_free(struct ndpip_socket *sock, struct ndpip_pbuf **pb, uint16_t len, bool rx)
 {
 	struct ndpip_pbuf_pool *pool = NULL;
 	
@@ -342,6 +383,35 @@ int ndpip_sock_free(struct ndpip_socket *sock, struct ndpip_pbuf **pb, size_t le
 	}
 
 	if (ndpip_pbuf_pool_release(pool, pb, len) < 0) {
+		errno = EFAULT;
+		return -1;
+	}
+
+	return 0;
+}
+
+int ndpip_sock_alloc(struct ndpip_socket *sock, struct ndpip_pbuf **pb, uint16_t len, bool rx)
+{
+	struct ndpip_pbuf_pool *pool = NULL;
+	
+	if (rx)
+		pool = ndpip_iface_get_pbuf_pool_rx(sock->socket_iface);
+	else
+		pool = ndpip_iface_get_pbuf_pool_tx(sock->socket_iface);
+
+	if (pool == NULL) {
+		errno = EFAULT;
+		return -1;
+	}
+
+	uint16_t tmp_len = len;
+
+	if (ndpip_pbuf_pool_request(pool, pb, &tmp_len) < 0) {
+		errno = EFAULT;
+		return -1;
+	}
+
+	if (tmp_len != len) {
 		errno = EFAULT;
 		return -1;
 	}
