@@ -37,8 +37,8 @@ int ndpip_rx_thread(void *argp)
 		if ((r < 0) || (pkt_cnt == 0))
 			continue;
 
-		bool win = true;
-		struct ndpip_socket *last_sock = NULL;
+		struct ndpip_socket *reply_sockets[pkt_cnt];
+		uint16_t reply_sockets_len = 0;
 
 		uint16_t replies_len = 0;
 		struct ndpip_pbuf *replies[pkt_cnt];
@@ -90,47 +90,36 @@ int ndpip_rx_thread(void *argp)
 			if (sock == NULL)
 				goto free_pkt;
 
-			if (sock->tcp_recovery || sock->tcp_retransmission)
-				win = false;
+			if (!sock->rx_loop_seen) {
+				reply_sockets[reply_sockets_len++] = sock;
+				sock->rx_loop_seen = true;
+			}
 
 			ndpip_pbuf_offset(pb, -(int) (sizeof(struct ethhdr) + sizeof(struct iphdr)));
 			ndpip_pbuf_resize(pb, ntohs(iph->tot_len) - sizeof(struct iphdr));
 			int r = ndpip_tcp_feed(sock, &remote, pb, replies[replies_len]);
-			if (r > 0)
+			if (r == 1)
 				replies_len++;
-
-			if (r != 2)
-				win = false;
-
-			if (sock->tcp_recovery || sock->tcp_retransmission)
-				win = false;
-
-			if ((last_sock != NULL) && (sock != last_sock))
-				win = false;
 
 			if (r == 2)
 				continue;
 
-			last_sock = sock;
-
 free_pkt:
 			ndpip_pbuf_pool_release(ndpip_iface_get_pbuf_pool_rx(iface), &pb, 1);
 		}
-#define SKIP 8
-		win = false;
-		if (replies_len > 0) {
-			if (win && (replies_len > SKIP)) {
-				ndpip_pbuf_pool_release(ndpip_iface_get_pbuf_pool_tx(iface), replies, replies_len - SKIP);
-				ndpip_iface_xmit(iface, replies + replies_len - SKIP, SKIP);
-				replies_len_a += SKIP;
-			} else {
-				ndpip_iface_xmit(iface, replies, replies_len);
-				replies_len_a += replies_len;
-			}
+
+		for (uint16_t idx = 0; idx < reply_sockets_len; idx++) {
+			int r = ndpip_tcp_feed(reply_sockets[idx], NULL, NULL, replies[replies_len]);
+			if (r == 1)
+				replies_len++;
+
+			reply_sockets[idx]->rx_loop_seen = false;
 		}
 
+		ndpip_iface_xmit(iface, replies, replies_len);
 		ndpip_pbuf_pool_release(ndpip_iface_get_pbuf_pool_tx(iface), replies + replies_len, pkt_cnt - replies_len);
 
+		replies_len_a += replies_len;
 		pkt_cnt_a += pkt_cnt;
 		iter++;
 

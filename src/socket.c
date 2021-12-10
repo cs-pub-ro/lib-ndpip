@@ -71,11 +71,15 @@ struct ndpip_socket *ndpip_socket_new(int domain, int type, int protocol)
 
 	sock->tcp_seq = 0;
 	sock->tcp_ack = 0;
+	sock->tcp_recv_win = 0;
+	sock->tcp_send_win = 0;
 	sock->tcp_last_ack = 0;
 	sock->tcp_good_ack = 0;
-	sock->tcp_win_scale = 1;
+	sock->tcp_recv_win_scale = 0;
+	sock->tcp_send_win_scale = 0;
 	sock->tcp_recovery = false;
 	sock->tcp_retransmission = false;
+	sock->rx_loop_seen = false;
 
 	sock->accept_queue = (struct ndpip_list_head) { &sock->accept_queue, &sock->accept_queue };
 
@@ -226,9 +230,10 @@ int ndpip_connect(int sockfd, const struct sockaddr *addr, socklen_t addrlen)
 		return -1;
 	}
 
+	sock->tcp_seq++;
 	ndpip_tcp_send(sock, pb, 1);
 
-	while (sock->state != CONNECTED)
+	while (sock->state == CONNECTING)
 		ndpip_nanosleep(1000UL);
 
 	return 0;
@@ -330,7 +335,7 @@ int ndpip_send(int sockfd, struct ndpip_pbuf **pb, uint16_t count)
 		return -1;
 	}
 
-	return ndpip_tcp_send(sock, pb, count);
+	return ndpip_tcp_send_data(sock, pb, count);
 }
 
 int ndpip_free(int sockfd, struct ndpip_pbuf **pb, uint16_t len) {
@@ -460,7 +465,7 @@ int ndpip_setsockopt(int sockfd, int level, int optname, const void *optval, soc
 				return -1;
 			}
 
-			sock->tcp_win_scale = *((uint8_t *) optval);
+			sock->tcp_recv_win_scale = *((uint8_t *) optval);
 
 			return 0;
 

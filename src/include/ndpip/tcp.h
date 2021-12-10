@@ -32,6 +32,8 @@ int ndpip_tcp_build_meta(struct ndpip_socket *sock, uint8_t flags, struct ndpip_
 int ndpip_tcp_build_syn(struct ndpip_socket *sock, bool ack, struct ndpip_pbuf *pb);
 int ndpip_tcp_feed(struct ndpip_socket *sock, struct sockaddr_in *remote, struct ndpip_pbuf *pb, struct ndpip_pbuf *rpb);
 int ndpip_tcp_send(struct ndpip_socket *sock, struct ndpip_pbuf **pb, uint16_t cnt);
+int ndpip_tcp_send_data(struct ndpip_socket *sock, struct ndpip_pbuf **pb, uint16_t cnt);
 void ndpip_tcp_rto_handler(void *argp);
+void ndpip_tcp_parse_opts(struct ndpip_socket *sock, struct tcphdr *th, uint16_t th_len);
 
 #endif

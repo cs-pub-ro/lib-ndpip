@@ -48,10 +48,16 @@ struct ndpip_socket {
 
 	uint32_t tcp_seq, tcp_ack, tcp_last_ack, tcp_good_ack;
 
-	uint8_t tcp_win_scale;
+	uint32_t tcp_recv_win;
+	uint32_t tcp_send_win;
+
+	uint8_t tcp_recv_win_scale;
+	uint8_t tcp_send_win_scale;
 
 	bool tcp_recovery;
 	bool tcp_retransmission;
+
+	bool rx_loop_seen;
 };
 
 struct ndpip_socket *ndpip_socket_new(int domain, int type, int protocol);
