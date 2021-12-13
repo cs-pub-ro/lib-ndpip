@@ -48,7 +48,7 @@ struct ndpip_ring {
 
 struct ndpip_ring *ndpip_ring_alloc(size_t length, size_t esize);
 int ndpip_ring_push(struct ndpip_ring *ring, void *buf, size_t count);
-int ndpip_ring_peek(struct ndpip_ring *ring, size_t offset, void *buf);
+int ndpip_ring_peek(struct ndpip_ring *ring, size_t offset, void **buf);
 int ndpip_ring_pop(struct ndpip_ring *ring, size_t *count, void *buf);
 size_t ndpip_ring_size(struct ndpip_ring *ring);
 

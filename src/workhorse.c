@@ -119,6 +119,24 @@ free_pkt:
 		ndpip_iface_xmit(iface, replies, replies_len);
 		ndpip_pbuf_pool_release(ndpip_iface_get_pbuf_pool_tx(iface), replies + replies_len, pkt_cnt - replies_len);
 
+		for (uint16_t idx = 0; idx < reply_sockets_len; idx++) {
+			struct ndpip_socket *sock = reply_sockets[idx];
+			if (!sock->tcp_backup)
+				continue;
+
+			size_t xmit_size = ndpip_ring_size(sock->xmit_ring);
+			xmit_size = xmit_size < (1 << 16) ? xmit_size : (1 << 16);
+
+			uint16_t retransmit_len = 0;
+			for (uint16_t jdx; jdx < xmit_size; jdx++) {
+				struct tcphdr *th = ndpip_pbuf_data(ndpip_ring_peek(sock->xmit_ring, jdx));
+				if (ntohl(th->th_seq) >= sock[idx]->tcp_last_ack)
+					break;
+
+				retransmit_len++;
+			}
+		}
+
 		replies_len_a += replies_len;
 		pkt_cnt_a += pkt_cnt;
 		iter++;

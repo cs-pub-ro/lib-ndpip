@@ -72,13 +72,15 @@ struct ndpip_socket *ndpip_socket_new(int domain, int type, int protocol)
 	sock->tcp_seq = 0;
 	sock->tcp_ack = 0;
 	sock->tcp_recv_win = 0;
-	sock->tcp_send_win = 0;
+	sock->tcp_max_seq = 0;
 	sock->tcp_last_ack = 0;
 	sock->tcp_good_ack = 0;
 	sock->tcp_recv_win_scale = 0;
 	sock->tcp_send_win_scale = 0;
 	sock->tcp_recovery = false;
 	sock->tcp_retransmission = false;
+	sock->tcp_rsp_ack = false;
+	sock->tcp_backup = false;
 	sock->rx_loop_seen = false;
 
 	sock->accept_queue = (struct ndpip_list_head) { &sock->accept_queue, &sock->accept_queue };
@@ -325,7 +327,7 @@ int ndpip_send(int sockfd, struct ndpip_pbuf **pb, uint16_t count)
 		return -1;
 	}
 
-	if ((sock->state != CONNECTED) && (sock->state != CLOSING)) {
+	if (sock->state != CONNECTED) {
 		errno = EINVAL;
 		return -1;
 	}

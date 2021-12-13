@@ -49,7 +49,7 @@ struct ndpip_socket {
 	uint32_t tcp_seq, tcp_ack, tcp_last_ack, tcp_good_ack;
 
 	uint32_t tcp_recv_win;
-	uint32_t tcp_send_win;
+	uint32_t tcp_max_seq;
 
 	uint8_t tcp_recv_win_scale;
 	uint8_t tcp_send_win_scale;
@@ -57,6 +57,7 @@ struct ndpip_socket {
 	bool tcp_recovery;
 	bool tcp_retransmission;
 
+	bool tcp_rsp_ack;
 	bool rx_loop_seen;
 };
 

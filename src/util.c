@@ -89,13 +89,13 @@ ret:
 	return 0;
 }
 
-int ndpip_ring_peek(struct ndpip_ring *ring, size_t offset, void *buf)
+int ndpip_ring_peek(struct ndpip_ring *ring, size_t offset, void **buf)
 {
 	if ((ring->ring_start + offset) >= ring->ring_end)
 		return -1;
 
 	size_t ring_elem = (ring->ring_start + offset) & ring->ring_mask;
-	memcpy(buf, ring->ring_base + ring->ring_esize * ring_elem, ring->ring_esize);
+	*buf = ring->ring_base + ring->ring_esize * ring_elem;
 
 	return 0;
 }
