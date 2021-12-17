@@ -62,16 +62,21 @@ size_t ndpip_ring_size(struct ndpip_ring *ring)
 	return ring->ring_end - ring->ring_start;
 }
 
-int ndpip_ring_pop(struct ndpip_ring *ring, size_t *count, void *buf)
+static int ndpip_ring_pop0(struct ndpip_ring *ring, size_t *count, void *buf, bool pop)
 {
+	if (*count == 0)
+		return 0;
+
 	size_t consumer = ring->ring_start & ring->ring_mask;
 	size_t r_count = ring->ring_end - ring->ring_start;
-	if (r_count == 0)
-		return 0;
 
 	r_count = r_count < *count ? r_count : *count;
 
-	ring->ring_start += r_count;
+	if (r_count == 0)
+		return -1;
+
+	if (pop)
+		ring->ring_start += r_count;
 
 	size_t count1 = ring->ring_length - consumer;
 	count1 = count1 < r_count ? count1 : r_count;
@@ -85,19 +90,35 @@ int ndpip_ring_pop(struct ndpip_ring *ring, size_t *count, void *buf)
 
 ret:
 	*count = r_count;
+	return 0;
+}
+
+int ndpip_ring_flush(struct ndpip_ring *ring, size_t count)
+{
+	if (count == 0)
+		return 0;
+
+	size_t r_count = ring->ring_end - ring->ring_start;
+	r_count = r_count < count ? r_count : count;
+
+	if (r_count < count)
+		return -1;
+
+	r_count = r_count < count ? r_count : count;
+
+	ring->ring_start += r_count;
 
 	return 0;
 }
 
-int ndpip_ring_peek(struct ndpip_ring *ring, size_t offset, void **buf)
+int ndpip_ring_peek(struct ndpip_ring *ring, size_t *count, void *buf)
 {
-	if ((ring->ring_start + offset) >= ring->ring_end)
-		return -1;
+	return ndpip_ring_pop0(ring, count, buf, false);
+}
 
-	size_t ring_elem = (ring->ring_start + offset) & ring->ring_mask;
-	*buf = ring->ring_base + ring->ring_esize * ring_elem;
-
-	return 0;
+int ndpip_ring_pop(struct ndpip_ring *ring, size_t *count, void *buf)
+{
+	return ndpip_ring_pop0(ring, count, buf, true);
 }
 
 void ndpip_list_add(struct ndpip_list_head *prev, struct ndpip_list_head *element)
@@ -125,7 +146,10 @@ bool ndpip_timer_expired(struct ndpip_timer *timer)
 	struct timespec now;
 	ndpip_time_now(&now);
 
-	if (((&now)->tv_sec >= timer->timeout.tv_sec) &&
+	if ((&now)->tv_sec > timer->timeout.tv_sec)
+		return true;
+
+	if (((&now)->tv_sec == timer->timeout.tv_sec) &&
 		((&now)->tv_nsec >= timer->timeout.tv_nsec))
 		return true;
 

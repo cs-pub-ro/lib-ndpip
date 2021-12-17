@@ -1,6 +1,8 @@
 #ifndef _SRC_INCLUDE_NDPIP_SOCKET_H_
 #define _SRC_INCLUDE_NDPIP_SOCKET_H_
 
+#include <threads.h>
+
 #include <netinet/ether.h>
 #include <netinet/ip.h>
 #include <netinet/tcp.h>

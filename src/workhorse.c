@@ -22,14 +22,14 @@
 int ndpip_rx_thread(void *argp)
 {
 	struct ndpip_iface *iface = argp;
-	uint16_t rx_burst_size = ndpip_iface_get_rx_burst_size(iface);
+	uint16_t burst_size = ndpip_iface_get_burst_size(iface);
 
 	uint64_t iter = 0;
 	uint64_t pkt_cnt_a = 0;
 	uint64_t replies_len_a = 0;
 
 	while (ndpip_iface_rx_thread_running(iface)) {
-		uint16_t pkt_cnt = rx_burst_size;
+		uint16_t pkt_cnt = burst_size;
 		struct ndpip_pbuf *pkts[pkt_cnt];
 
 		int r = ndpip_iface_rx_burst(iface, (void *) pkts, &pkt_cnt);
@@ -119,24 +119,6 @@ free_pkt:
 		ndpip_iface_xmit(iface, replies, replies_len);
 		ndpip_pbuf_pool_release(ndpip_iface_get_pbuf_pool_tx(iface), replies + replies_len, pkt_cnt - replies_len);
 
-		for (uint16_t idx = 0; idx < reply_sockets_len; idx++) {
-			struct ndpip_socket *sock = reply_sockets[idx];
-			if (!sock->tcp_backup)
-				continue;
-
-			size_t xmit_size = ndpip_ring_size(sock->xmit_ring);
-			xmit_size = xmit_size < (1 << 16) ? xmit_size : (1 << 16);
-
-			uint16_t retransmit_len = 0;
-			for (uint16_t jdx; jdx < xmit_size; jdx++) {
-				struct tcphdr *th = ndpip_pbuf_data(ndpip_ring_peek(sock->xmit_ring, jdx));
-				if (ntohl(th->th_seq) >= sock[idx]->tcp_last_ack)
-					break;
-
-				retransmit_len++;
-			}
-		}
-
 		replies_len_a += replies_len;
 		pkt_cnt_a += pkt_cnt;
 		iter++;
@@ -173,7 +155,7 @@ int ndpip_timers_thread(void *argp)
 			}
 		}
 
-		ndpip_nanosleep(25000000);
+		ndpip_usleep(25000);
 	}
 
 	return 0;

@@ -3,4 +3,8 @@
 
 #include "../../include/ndpip/pbuf.h"
 
+struct ndpip_pbuf_meta {
+	uint64_t xmit_tsc;
+};
+
 #endif

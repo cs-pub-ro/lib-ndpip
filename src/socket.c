@@ -67,6 +67,9 @@ struct ndpip_socket *ndpip_socket_new(int domain, int type, int protocol)
 	sock->recv_ring = ndpip_ring_alloc(NDPIP_TODO_SOCKET_RECV_RING_LENGTH, sizeof(struct ndpip_pbuf *));
 
 	sock->socket_timer_rto = ndpip_timer_alloc(ndpip_tcp_rto_handler, (void *) sock);
+	struct timespec expire;
+	ndpip_time_now(&expire);
+	ndpip_timer_arm(sock->socket_timer_rto, &expire);
 	ndpip_timers_add(sock->socket_timer_rto);
 
 	sock->tcp_seq = 0;
@@ -80,7 +83,6 @@ struct ndpip_socket *ndpip_socket_new(int domain, int type, int protocol)
 	sock->tcp_recovery = false;
 	sock->tcp_retransmission = false;
 	sock->tcp_rsp_ack = false;
-	sock->tcp_backup = false;
 	sock->rx_loop_seen = false;
 
 	sock->accept_queue = (struct ndpip_list_head) { &sock->accept_queue, &sock->accept_queue };
@@ -232,11 +234,17 @@ int ndpip_connect(int sockfd, const struct sockaddr *addr, socklen_t addrlen)
 		return -1;
 	}
 
+	sock->tcp_last_ack = sock->tcp_seq;
 	sock->tcp_seq++;
 	ndpip_tcp_send(sock, pb, 1);
 
 	while (sock->state == CONNECTING)
-		ndpip_nanosleep(1000UL);
+		ndpip_usleep(1);
+
+	if (sock->state != CONNECTED) {
+		errno = ECONNREFUSED;
+		return -1;
+	}
 
 	return 0;
 }
@@ -265,7 +273,7 @@ int ndpip_accept(int sockfd, struct sockaddr *addr, socklen_t *addrlen) {
 	}
 
 	while (asock->state != CONNECTED)
-		ndpip_nanosleep(1000UL);
+		ndpip_usleep(1);
 
 	if ((addr != NULL) && (addrlen != NULL)) {
 		*((struct sockaddr_in *) addr) = asock->remote;

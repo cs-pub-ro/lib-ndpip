@@ -3,6 +3,7 @@
 
 #include "../../../include/ndpip/linux_dpdk.h"
 
+#include "ndpip/pbuf.h"
 #include "ndpip/pbuf_pool.h"
 #include "ndpip/util.h"
 
@@ -11,7 +12,7 @@ struct ndpip_linux_dpdk_iface {
         int iface_rx_queue_id;
         int iface_tx_queue_id;
 
-        uint16_t iface_rx_burst_size;
+        uint16_t iface_burst_size;
 
 	struct in_addr iface_inaddr;
         struct ether_addr iface_ethaddr;
@@ -44,12 +45,20 @@ struct ether_addr *ndpip_linux_dpdk_iface_resolve_arp(struct ndpip_iface *iface,
 
 int ndpip_linux_dpdk_iface_xmit(struct ndpip_iface *iface, struct ndpip_pbuf **pb, uint16_t cnt);
 
-void ndpip_linux_dpdk_nanosleep(uint64_t nsec);
+void ndpip_linux_dpdk_usleep(unsigned usec);
 void ndpip_linux_dpdk_thread_yield();
 
 bool ndpip_linux_dpdk_iface_rx_thread_running(struct ndpip_iface *iface);
 bool ndpip_linux_dpdk_iface_timers_thread_running(struct ndpip_iface *iface);
-uint16_t ndpip_iface_get_rx_burst_size(struct ndpip_iface *iface);
+
+struct ndpip_pbuf_meta *ndpip_linux_dpdk_pbuf_metadata(struct ndpip_pbuf *pbuf);
+
+uint16_t ndpip_linux_dpdk_iface_get_burst_size(struct ndpip_iface *iface);
+
+void ndpip_linux_dpdk_pbuf_refcount_add(struct ndpip_pbuf *pb, int16_t val);
+
+uint64_t ndpip_linux_dpdk_tsc();
+void ndpip_linux_dpdk_tsc2time(uint64_t tsc, struct timespec *req);
 
 #define ndpip_iface_get_by_inaddr ndpip_linux_dpdk_iface_get_by_inaddr
 #define ndpip_iface_get_ethaddr ndpip_linux_dpdk_iface_get_ethaddr
@@ -58,7 +67,7 @@ uint16_t ndpip_iface_get_rx_burst_size(struct ndpip_iface *iface);
 #define ndpip_iface_get_pbuf_pool_tx(iface) (((struct ndpip_linux_dpdk_iface *) (iface))->iface_pbuf_pool_tx)
 #define ndpip_iface_resolve_arp ndpip_linux_dpdk_iface_resolve_arp
 
-#define ndpip_nanosleep ndpip_linux_dpdk_nanosleep
+#define ndpip_usleep ndpip_linux_dpdk_usleep
 #define ndpip_thread_yield ndpip_linux_dpdk_thread_yield
 
 #define ndpip_iface_rx_thread_running ndpip_linux_dpdk_iface_rx_thread_running
@@ -73,10 +82,18 @@ uint16_t ndpip_iface_get_rx_burst_size(struct ndpip_iface *iface);
 #define ndpip_pbuf_resize ndpip_linux_dpdk_pbuf_resize
 #define ndpip_pbuf_refcount_get ndpip_linux_dpdk_pbuf_refcount_get
 #define ndpip_pbuf_refcount_add ndpip_linux_dpdk_pbuf_refcount_add
+#define ndpip_pbuf_refcount_sub ndpip_linux_dpdk_pbuf_refcount_sub
 #define ndpip_pbuf_refcount_set ndpip_linux_dpdk_pbuf_refcount_set
 
 #define ndpip_pbuf_pool_alloc ndpip_linux_dpdk_pbuf_pool_alloc
 #define ndpip_pbuf_pool_request ndpip_linux_dpdk_pbuf_pool_request
 #define ndpip_pbuf_pool_release ndpip_linux_dpdk_pbuf_pool_release
+
+#define ndpip_pbuf_metadata ndpip_linux_dpdk_pbuf_metadata
+
+#define ndpip_iface_get_burst_size ndpip_linux_dpdk_iface_get_burst_size
+
+#define ndpip_tsc ndpip_linux_dpdk_tsc
+#define ndpip_tsc2time ndpip_linux_dpdk_tsc2time
 
 #endif
