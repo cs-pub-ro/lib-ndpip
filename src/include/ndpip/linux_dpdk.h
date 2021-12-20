@@ -43,7 +43,7 @@ struct in_addr *ndpip_linux_dpdk_iface_get_inaddr(struct ndpip_iface *iface);
 
 struct ether_addr *ndpip_linux_dpdk_iface_resolve_arp(struct ndpip_iface *iface, struct in_addr peer);
 
-int ndpip_linux_dpdk_iface_xmit(struct ndpip_iface *iface, struct ndpip_pbuf **pb, uint16_t cnt);
+int ndpip_linux_dpdk_iface_xmit(struct ndpip_iface *iface, struct ndpip_pbuf **pb, uint16_t cnt, bool free);
 
 void ndpip_linux_dpdk_usleep(unsigned usec);
 void ndpip_linux_dpdk_thread_yield();

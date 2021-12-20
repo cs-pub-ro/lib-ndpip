@@ -103,13 +103,14 @@ int ndpip_linux_dpdk_start_iface(int netdev_id)
 	return 0;
 }
 
-int ndpip_linux_dpdk_iface_xmit(struct ndpip_iface *iface, struct ndpip_pbuf **pb, uint16_t cnt)
+int ndpip_linux_dpdk_iface_xmit(struct ndpip_iface *iface, struct ndpip_pbuf **pb, uint16_t cnt, bool free)
 {
 	struct rte_mbuf **mb = (void *) pb;
 	struct ndpip_linux_dpdk_iface *iface_linux_dpdk = (void *) iface;
 
-	for (uint16_t idx = 0; idx < cnt; idx++)
-		rte_mbuf_refcnt_update(mb[idx], 1);
+	if (!free)
+		for (uint16_t idx = 0; idx < cnt; idx++)
+			rte_mbuf_refcnt_update(mb[idx], 1);
 
 	for (uint16_t idx = 0; idx < cnt;)
 		idx += rte_eth_tx_burst(

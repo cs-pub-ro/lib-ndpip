@@ -159,7 +159,7 @@ void ndpip_tcp_rto_handler(void *argp) {
 		((&now)->tv_nsec < (&exp1)->tv_nsec))
 		goto ret;
 
-	ndpip_iface_xmit(sock->socket_iface, &pb, 1);
+	ndpip_iface_xmit(sock->socket_iface, &pb, 1, true);
 
 ret:
 	ndpip_timespec_add(&expire, NDPIP_TODO_TCP_RETRANSMIT_TIMEOUT);
@@ -184,10 +184,8 @@ void ndpip_tcp_parse_opts(struct ndpip_socket *sock, struct tcphdr *th, uint16_t
 
 uint16_t ndpip_tcp_max_xmit(struct ndpip_socket *sock, struct ndpip_pbuf **pb, uint16_t cnt)
 {
-	/*
         if (ndpip_ring_size(sock->xmit_ring) != 0)
                 return 0;
-	*/
 
 	uint16_t burst_size = ndpip_iface_get_burst_size(sock->socket_iface);
 	cnt = cnt < burst_size ? cnt : burst_size;
@@ -241,7 +239,7 @@ int ndpip_tcp_send_data(struct ndpip_socket *sock, struct ndpip_pbuf **pb, uint1
 	}
 
 	ndpip_ring_push(sock->xmit_ring, pb, cnt);
-	ndpip_iface_xmit(sock->socket_iface, pb, cnt);
+	ndpip_iface_xmit(sock->socket_iface, pb, cnt, false);
 
 	return cnt;
 }
@@ -249,7 +247,7 @@ int ndpip_tcp_send_data(struct ndpip_socket *sock, struct ndpip_pbuf **pb, uint1
 int ndpip_tcp_send(struct ndpip_socket *sock, struct ndpip_pbuf **pb, uint16_t cnt)
 {
 	ndpip_ring_push(sock->xmit_ring, pb, cnt);
-	ndpip_iface_xmit(sock->socket_iface, pb, cnt);
+	ndpip_iface_xmit(sock->socket_iface, pb, cnt, false);
 
 	return 0;
 }
