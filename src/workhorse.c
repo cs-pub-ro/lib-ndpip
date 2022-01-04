@@ -116,7 +116,9 @@ free_pkt:
 			reply_sockets[idx]->rx_loop_seen = false;
 		}
 
-		ndpip_iface_xmit(iface, replies, replies_len, true);
+		if (replies_len > 0)
+			ndpip_iface_xmit(iface, replies, replies_len, true);
+
 		ndpip_pbuf_pool_release(ndpip_iface_get_pbuf_pool_tx(iface), replies + replies_len, pkt_cnt - replies_len);
 
 		replies_len_a += replies_len;

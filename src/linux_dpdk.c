@@ -6,9 +6,9 @@
 #include <rte_mbuf.h>
 #include <rte_ethdev.h>
 
-#define NDPIP_TODO_NB_MBUF (1 << 16)
+#define NDPIP_TODO_NB_MBUF (1 << 19)
 #define NDPIP_TODO_MEMPOOL_CACHE_SZ 256
-#define NDPIP_TODO_MBUF_SIZE (3 * 4096)
+#define NDPIP_TODO_MBUF_SIZE 2048
 #define NDPIP_TODO_MTU 1500
 #define NDPIP_DPDK_LINUX_MBUF_PRIVATE RTE_ALIGN_CEIL(sizeof(struct ndpip_pbuf_meta), RTE_MBUF_PRIV_ALIGN)
 
@@ -105,6 +105,8 @@ int ndpip_linux_dpdk_start_iface(int netdev_id)
 
 int ndpip_linux_dpdk_iface_xmit(struct ndpip_iface *iface, struct ndpip_pbuf **pb, uint16_t cnt, bool free)
 {
+	printf("xmit=%hu;\n", cnt);
+
 	struct rte_mbuf **mb = (void *) pb;
 	struct ndpip_linux_dpdk_iface *iface_linux_dpdk = (void *) iface;
 
@@ -112,11 +114,19 @@ int ndpip_linux_dpdk_iface_xmit(struct ndpip_iface *iface, struct ndpip_pbuf **p
 		for (uint16_t idx = 0; idx < cnt; idx++)
 			rte_mbuf_refcnt_update(mb[idx], 1);
 
-	for (uint16_t idx = 0; idx < cnt;)
+	uint16_t max_burst = ndpip_iface_get_burst_size(iface);
+
+	for (uint16_t idx = 0; idx < cnt;) {
+		uint16_t cnt2 = cnt - idx;
+		cnt2 = max_burst < cnt2 ? max_burst : cnt2;
+
 		idx += rte_eth_tx_burst(
 			iface_linux_dpdk->iface_netdev_id,
 			iface_linux_dpdk->iface_tx_queue_id,
-			mb + idx, cnt - idx);
+			mb + idx, cnt2);
+
+		ndpip_usleep(10UL);
+	}
 
 	return 0;
 }

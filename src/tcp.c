@@ -151,15 +151,14 @@ void ndpip_tcp_rto_handler(void *argp) {
 	ndpip_tsc2time(pm->xmit_tsc, &exp1);
 	ndpip_timespec_add(&exp1, NDPIP_TODO_TCP_RETRANSMIT_TIMEOUT);
 
-	if ((&now)->tv_sec < (&exp1)->tv_sec) {
+	if ((&now)->tv_sec < (&exp1)->tv_sec)
 		goto ret;
-	}
 
 	if (((&now)->tv_sec == (&exp1)->tv_sec) &&
 		((&now)->tv_nsec < (&exp1)->tv_nsec))
 		goto ret;
 
-	ndpip_iface_xmit(sock->socket_iface, &pb, 1, true);
+	ndpip_iface_xmit(sock->socket_iface, &pb, 1, false);
 
 ret:
 	ndpip_timespec_add(&expire, NDPIP_TODO_TCP_RETRANSMIT_TIMEOUT);
@@ -187,8 +186,10 @@ uint16_t ndpip_tcp_max_xmit(struct ndpip_socket *sock, struct ndpip_pbuf **pb, u
         if (ndpip_ring_size(sock->xmit_ring) != 0)
                 return 0;
 
+	/*
 	uint16_t burst_size = ndpip_iface_get_burst_size(sock->socket_iface);
 	cnt = cnt < burst_size ? cnt : burst_size;
+	*/
 
 	uint32_t max_data = sock->tcp_max_seq - sock->tcp_seq;
 	uint32_t seq = 0;
@@ -216,7 +217,6 @@ int ndpip_tcp_send_data(struct ndpip_socket *sock, struct ndpip_pbuf **pb, uint1
 
 	for (uint16_t idx = 0; idx < cnt; idx++) {
 		uint16_t data_len = ndpip_pbuf_length(pb[idx]);
-		assert(data_len == 1460);
 
 		ndpip_pbuf_offset(pb[idx], sizeof(sock->xmit_template));
 		memcpy(ndpip_pbuf_data(pb[idx]), sock->xmit_template, sizeof(sock->xmit_template));
@@ -230,6 +230,7 @@ int ndpip_tcp_send_data(struct ndpip_socket *sock, struct ndpip_pbuf **pb, uint1
 		th->th_ack = htonl(sock->tcp_ack);
 		th->th_flags = TH_ACK;
 
+//		printf("tcp_seq=%u;\n", sock->tcp_seq);
 		sock->tcp_seq += data_len;
 
 		tcpip_checksum(iph);
@@ -267,6 +268,7 @@ void ndpip_tcp_free_acked(struct ndpip_socket *sock)
 	struct tcphdr *th = ndpip_pbuf_data(pb) + sizeof(struct ethhdr) + sizeof(struct iphdr);
 
 	ssize_t max_data = sock->tcp_last_ack - ntohl(th->th_seq);
+//	printf("tcp_last_ack=%u;\n", sock->tcp_last_ack);
 
 	for (; free_len < xmit_ring_size; free_len++) {
 		struct ndpip_pbuf *pb;
@@ -285,6 +287,8 @@ void ndpip_tcp_free_acked(struct ndpip_socket *sock)
 		} else
 			break;
 	}
+
+//	printf("xmit_ring_size=%lu;\n", ndpip_ring_size(sock->xmit_ring));
 }
 
 int ndpip_tcp_feed(struct ndpip_socket *sock, struct sockaddr_in *remote, struct ndpip_pbuf *pb, struct ndpip_pbuf *rpb)
