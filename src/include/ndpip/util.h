@@ -46,6 +46,18 @@ struct ndpip_ring {
 	size_t ring_end;
 }; 
 
+struct ndpip_hlist_node {
+	struct ndpip_list_head hnode_list;
+	uint64_t hnode_hash;
+	void *hnode_data;
+};
+
+struct ndpip_hashtable {
+	struct ndpip_list_head *hashtable_buckets;
+	uint64_t hashtable_length;
+	uint64_t hashtable_mask;
+};
+
 struct ndpip_ring *ndpip_ring_alloc(size_t length, size_t esize);
 int ndpip_ring_push(struct ndpip_ring *ring, void *buf, size_t count);
 int ndpip_ring_pop(struct ndpip_ring *ring, size_t *count, void *buf);
@@ -72,5 +84,10 @@ static inline uint64_t rdtsc(void)
 	asm volatile("rdtsc" : "=a"(l), "=d"(h));
 	return (h << 32) | l;
 }
+
+struct ndpip_hashtable *ndpip_hashtable_alloc(size_t buckets);
+void *ndpip_hashtable_get(struct ndpip_hashtable *hashtable, void *key, size_t key_size);
+void ndpip_hashtable_put(struct ndpip_hashtable *hashtable, void *key, size_t key_size, void *data);
+void ndpip_hashtable_del(struct ndpip_hashtable *hashtable, void *key, size_t key_size);
 
 #endif

@@ -8,7 +8,7 @@
 
 #define NDPIP_TODO_NB_MBUF (1 << 19)
 #define NDPIP_TODO_MEMPOOL_CACHE_SZ 256
-#define NDPIP_TODO_MBUF_SIZE 2048
+#define NDPIP_TODO_MBUF_SIZE 3072
 #define NDPIP_TODO_MTU 1500
 #define NDPIP_DPDK_LINUX_MBUF_PRIVATE RTE_ALIGN_CEIL(sizeof(struct ndpip_pbuf_meta), RTE_MBUF_PRIV_ALIGN)
 
@@ -95,18 +95,15 @@ int ndpip_linux_dpdk_start_iface(int netdev_id)
 	(&iface)->iface_timers_thread_running = true;
 
 	unsigned rx_lcore = rte_get_next_lcore(rte_lcore_id(), 1, 1);
-	unsigned timers_lcore = rte_get_next_lcore(rx_lcore, 1, 1);
 
+	pthread_create(&(&iface)->iface_timers_thread, NULL, ndpip_linux_dpdk_timers_thread, &iface);
 	rte_eal_remote_launch(ndpip_rx_thread, &iface, rx_lcore);
-	rte_eal_remote_launch(ndpip_timers_thread, &iface, timers_lcore);
 
 	return 0;
 }
 
 int ndpip_linux_dpdk_iface_xmit(struct ndpip_iface *iface, struct ndpip_pbuf **pb, uint16_t cnt, bool free)
 {
-	printf("xmit=%hu;\n", cnt);
-
 	struct rte_mbuf **mb = (void *) pb;
 	struct ndpip_linux_dpdk_iface *iface_linux_dpdk = (void *) iface;
 
@@ -124,8 +121,6 @@ int ndpip_linux_dpdk_iface_xmit(struct ndpip_iface *iface, struct ndpip_pbuf **p
 			iface_linux_dpdk->iface_netdev_id,
 			iface_linux_dpdk->iface_tx_queue_id,
 			mb + idx, cnt2);
-
-		ndpip_usleep(10UL);
 	}
 
 	return 0;
@@ -316,4 +311,12 @@ void ndpip_linux_dpdk_pbuf_refcount_add(struct ndpip_pbuf *pb, int16_t val)
 {
 	struct rte_mbuf *mb = (void *) pb;
 	rte_mbuf_refcnt_update(mb, val);
+}
+
+void *ndpip_linux_dpdk_timers_thread(void *argp)
+{
+	struct ndpip_iface *iface = argp;
+	ndpip_timers_thread(iface);
+
+	return NULL;
 }

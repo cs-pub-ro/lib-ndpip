@@ -7,43 +7,41 @@
 #include "ndpip/workhorse.h"
 
 
+#define NDPIP_TODO_MAX_FDS 1024
+#define NDPIP_TODO_ESTABLISHED_SOCKETS_BUCKETS 1024
+#define NDPIP_TODO_LISTENING_SOCKETS_BUCKETS 32
 #define NDPIP_TODO_SOCKET_XMIT_RING_LENGTH (1 << 20)
 #define NDPIP_TODO_SOCKET_RECV_RING_LENGTH (1 << 20)
 
 
-static NDPIP_LIST_HEAD(ndpip_sockets_head);
-
-static int last_socket_id = 0;
+struct ndpip_hashtable *ndpip_established_sockets = NULL;
+static struct ndpip_hashtable *listening_sockets = NULL;
+static struct ndpip_socket **socket_table = NULL;
 
 
 struct ndpip_socket *ndpip_socket_get_by_peer(struct sockaddr_in *local, struct sockaddr_in *remote)
 {
-	struct ndpip_socket *ret = NULL;
+	if (ndpip_established_sockets == NULL)
+		return NULL;
 
-	ndpip_list_foreach(struct ndpip_socket, sock, &ndpip_sockets_head) {
-		if ((sock->local.sin_addr.s_addr == local->sin_addr.s_addr) &&
-			(sock->local.sin_port == local->sin_port)) {
+	struct sockaddr_in key[2] = { *local, *remote };
+	struct ndpip_socket *ret = ndpip_hashtable_get(ndpip_established_sockets, key, sizeof(key));
+	if (ret != NULL)
+		return ret;
 
-			if (!((sock->state == LISTENING) || (sock->state == CLOSED)) &&
-				(sock->remote.sin_addr.s_addr == remote->sin_addr.s_addr) &&
-				(sock->remote.sin_port == remote->sin_port)) {
+	if (listening_sockets == NULL)
+		return NULL;
 
-				return sock;
-			}
-
-			if (sock->state == LISTENING)
-				ret = sock;
-		}
-	}
-
-	return ret;
+	return ndpip_hashtable_get(listening_sockets, local, sizeof(struct sockaddr_in));
 }
 
 static struct ndpip_socket *ndpip_socket_get(int sockfd)
 {
-	ndpip_list_foreach(struct ndpip_socket, sock, &ndpip_sockets_head)
-		if (sock->socket_id == sockfd)
-			return sock;
+	if (socket_table == NULL)
+		return NULL;
+
+	if (sockfd < NDPIP_TODO_MAX_FDS)
+		return socket_table[sockfd];
 
 	return NULL;
 }
@@ -51,17 +49,25 @@ static struct ndpip_socket *ndpip_socket_get(int sockfd)
 struct ndpip_socket *ndpip_socket_new(int domain, int type, int protocol)
 {
 	if (!((domain == AF_INET) && (type == SOCK_NDPIP) && (protocol == IPPROTO_TCP)))
-			return NULL;
+		return NULL;
+
+	int socket_id = 0;
+	for (socket_id = 0; socket_id < NDPIP_TODO_MAX_FDS; socket_id++)
+		if (socket_table[socket_id] == NULL)
+			break;
+
+	if (socket_id == NDPIP_TODO_MAX_FDS)
+		return NULL;
 
 	struct ndpip_socket *sock = malloc(sizeof(struct ndpip_socket));
 
-	sock->socket_id = ++last_socket_id;
+	sock->socket_id = socket_id;
 	sock->socket_iface = NULL;
 
 	sock->state = NEW;
 
-	sock->local = (struct sockaddr_in) { .sin_addr.s_addr = 0, .sin_port = 0 };
-	sock->remote = (struct sockaddr_in) { .sin_addr.s_addr = 0, .sin_port = 0 };
+	sock->local = (struct sockaddr_in) { .sin_family = AF_INET, .sin_addr.s_addr = 0, .sin_port = 0 };
+	sock->remote = (struct sockaddr_in) { .sin_family = AF_INET, .sin_addr.s_addr = 0, .sin_port = 0 };
 
 	sock->xmit_ring = ndpip_ring_alloc(NDPIP_TODO_SOCKET_XMIT_RING_LENGTH, sizeof(struct ndpip_pbuf *));
 	sock->recv_ring = ndpip_ring_alloc(NDPIP_TODO_SOCKET_RECV_RING_LENGTH, sizeof(struct ndpip_pbuf *));
@@ -87,13 +93,18 @@ struct ndpip_socket *ndpip_socket_new(int domain, int type, int protocol)
 
 	sock->accept_queue = (struct ndpip_list_head) { &sock->accept_queue, &sock->accept_queue };
 
-	ndpip_list_add(&ndpip_sockets_head, (void *) sock);
-
+	socket_table[socket_id] = sock;
 	return sock;
 }
 
 int ndpip_socket(int domain, int type, int protocol)
 {
+	if (socket_table == NULL) {
+		socket_table = calloc(NDPIP_TODO_MAX_FDS, sizeof(struct ndpip_socket *));
+		ndpip_established_sockets = ndpip_hashtable_alloc(NDPIP_TODO_ESTABLISHED_SOCKETS_BUCKETS);
+		listening_sockets = ndpip_hashtable_alloc(NDPIP_TODO_LISTENING_SOCKETS_BUCKETS);
+	}
+
 	struct ndpip_socket *sock = ndpip_socket_new(domain, type, protocol);
 	if (sock == NULL)
 		return -1;
@@ -131,12 +142,15 @@ int ndpip_bind(int sockfd, const struct sockaddr *addr, socklen_t addrlen)
 
 	struct sockaddr_in *addr_in = (void *) addr;
 
-	ndpip_list_foreach(struct ndpip_socket, sock, &ndpip_sockets_head)
-		if (memcmp(&sock->local, &addr_in, sizeof(struct sockaddr_in)) == 0) {
+	for (size_t idx = 0; idx < NDPIP_TODO_MAX_FDS; idx++) {
+		if (socket_table[idx] == NULL)
+			continue;
 
+		if (memcmp(&socket_table[idx]->local, &addr_in, sizeof(struct sockaddr_in)) == 0) {
 			errno = EADDRINUSE;
 			return -1;
 		}
+	}
 
 	sock->local = *addr_in;
 	sock->socket_iface = ndpip_iface_get_by_inaddr(sock->local.sin_addr);
@@ -167,6 +181,7 @@ int ndpip_listen(int sockfd, int backlog)
 	}
 
 	sock->state = LISTENING;
+	ndpip_hashtable_put(listening_sockets, &sock->local, sizeof(struct sockaddr_in), sock);
 
 	return 0;
 }
@@ -236,6 +251,9 @@ int ndpip_connect(int sockfd, const struct sockaddr *addr, socklen_t addrlen)
 
 	sock->tcp_last_ack = sock->tcp_seq;
 	sock->tcp_seq++;
+
+	struct sockaddr_in key[2] = { sock->local, sock->remote };
+	ndpip_hashtable_put(ndpip_established_sockets, key, sizeof(key), sock);
 	ndpip_tcp_send(sock, pb, 1);
 
 	while (sock->state == CONNECTING)

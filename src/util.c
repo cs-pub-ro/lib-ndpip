@@ -15,6 +15,8 @@
 
 #endif
 
+#include "xxh3.h"
+
 struct ndpip_ring *ndpip_ring_alloc(size_t length, size_t esize)
 {
 	struct ndpip_ring *ret = malloc(sizeof(struct ndpip_ring));
@@ -189,4 +191,61 @@ void ndpip_timespec_add(struct timespec *ts, struct timespec add)
 
 	ts->tv_sec = nsec / NDPIP_NSEC_IN_SEC;
 	ts->tv_nsec = nsec % NDPIP_NSEC_IN_SEC;
+}
+
+struct ndpip_hashtable *ndpip_hashtable_alloc(uint64_t buckets)
+{
+	struct ndpip_hashtable *ret = malloc(sizeof(struct ndpip_hashtable));
+
+	ret->hashtable_buckets = malloc(sizeof(struct ndpip_list_head) * buckets);
+	ret->hashtable_mask = buckets - 1;
+	ret->hashtable_length = buckets;
+
+	for (size_t idx = 0; idx < ret->hashtable_length; idx++)
+		ret->hashtable_buckets[idx].prev = ret->hashtable_buckets[idx].next = &ret->hashtable_buckets[idx];
+
+	return ret;
+}
+
+uint64_t ndpip_hash(void *key, size_t key_size)
+{
+	return XXH64(key, key_size, 0);
+}
+
+void *ndpip_hashtable_get(struct ndpip_hashtable *hashtable, void *key, size_t key_size)
+{
+	uint64_t hash = ndpip_hash(key, key_size);
+	struct ndpip_list_head *bucket = (void *) &hashtable->hashtable_buckets[hash & hashtable->hashtable_mask];
+
+	ndpip_list_foreach(struct ndpip_hlist_node, hnode, bucket) {
+		if (hnode->hnode_hash == hash)
+			return hnode->hnode_data;
+	}
+
+	return NULL;
+}
+
+void ndpip_hashtable_put(struct ndpip_hashtable *hashtable, void *key, size_t key_size, void *data)
+{
+	uint64_t hash = ndpip_hash(key, key_size);
+	struct ndpip_list_head *bucket = (void *) &hashtable->hashtable_buckets[hash & hashtable->hashtable_mask];
+
+	struct ndpip_hlist_node *hnode = malloc(sizeof(struct ndpip_hlist_node));
+	hnode->hnode_hash = hash;
+	hnode->hnode_data = data;
+
+	ndpip_list_add(bucket, (struct ndpip_list_head *) hnode);
+}
+
+void ndpip_hashtable_del(struct ndpip_hashtable *hashtable, void *key, size_t key_size)
+{
+	uint64_t hash = ndpip_hash(key, key_size);
+	struct ndpip_list_head *bucket = (void *) &hashtable->hashtable_buckets[hash & hashtable->hashtable_mask];
+
+	ndpip_list_foreach(struct ndpip_hlist_node, hnode, bucket) {
+		if (hnode->hnode_hash == hash) {
+			ndpip_list_del((struct ndpip_list_head *) hnode);
+			free(hnode);
+		}
+	}
 }

@@ -3,9 +3,12 @@
 
 #include "../../../include/ndpip/linux_dpdk.h"
 
+#include "ndpip/iface.h"
 #include "ndpip/pbuf.h"
 #include "ndpip/pbuf_pool.h"
 #include "ndpip/util.h"
+
+#include <pthread.h>
 
 struct ndpip_linux_dpdk_iface {
         int iface_netdev_id;
@@ -22,12 +25,11 @@ struct ndpip_linux_dpdk_iface {
         bool iface_rx_thread_running;
         bool iface_timers_thread_running;
 
+	pthread_t iface_timers_thread;
+
 	struct ndpip_pbuf_pool *iface_pbuf_pool_rx;
 	struct ndpip_pbuf_pool *iface_pbuf_pool_tx;
 };
-
-struct ndpip_iface;
-struct ndpip_pbuf_pool;
 
 struct ndpip_pbuf_pool *ndpip_linux_dpdk_pbuf_pool_alloc(size_t pbuf_count, uint16_t pbuf_size, size_t pbuf_allign, uint16_t pbuf_headroom);
 int ndpip_linux_dpdk_pbuf_pool_request(struct ndpip_pbuf_pool *pool, struct ndpip_pbuf **pb, uint16_t *count);
@@ -59,6 +61,8 @@ void ndpip_linux_dpdk_pbuf_refcount_add(struct ndpip_pbuf *pb, int16_t val);
 
 uint64_t ndpip_linux_dpdk_tsc();
 void ndpip_linux_dpdk_tsc2time(uint64_t tsc, struct timespec *req);
+
+void *ndpip_linux_dpdk_timers_thread(void *argp);
 
 #define ndpip_iface_get_by_inaddr ndpip_linux_dpdk_iface_get_by_inaddr
 #define ndpip_iface_get_ethaddr ndpip_linux_dpdk_iface_get_ethaddr

@@ -145,10 +145,8 @@ void ndpip_timers_add(struct ndpip_timer *timer)
         ndpip_list_add(&ndpip_timers_head, (void *) timer);
 }
 
-int ndpip_timers_thread(void *argp)
+void ndpip_timers_thread(struct ndpip_iface *iface)
 {
-	struct ndpip_iface *iface = argp;
-
 	while (ndpip_iface_timers_thread_running(iface)) {
 		ndpip_list_foreach(struct ndpip_timer, timer, &ndpip_timers_head) {
 			if (ndpip_timer_armed(timer) && ndpip_timer_expired(timer)) {
@@ -159,6 +157,4 @@ int ndpip_timers_thread(void *argp)
 
 		ndpip_usleep(25000);
 	}
-
-	return 0;
 }

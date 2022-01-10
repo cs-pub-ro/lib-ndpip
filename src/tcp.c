@@ -14,7 +14,7 @@
 
 #define NDPIP_TODO_TCP_RETRANSMIT_COUNT 3
 #define NDPIP_TODO_TCP_WIN_SIZE 65535
-#define NDPIP_TODO_TCP_MSS 1498
+#define NDPIP_TODO_TCP_MSS 1460
 #define NDPIP_TODO_TCP_RETRANSMIT_TIMEOUT ((struct timespec) { .tv_sec = 0, .tv_nsec = 25000000 })
 
 
@@ -140,6 +140,8 @@ void ndpip_tcp_rto_handler(void *argp) {
 
 	struct timespec expire = now;
 
+//	printf("TCP-rto: xmit_ring_size=%lu;\n", ndpip_ring_size(sock->xmit_ring));
+
 	if (ndpip_ring_peek(sock->xmit_ring, &cnt, &pb) < 0)
 		goto ret;
 
@@ -183,6 +185,20 @@ void ndpip_tcp_parse_opts(struct ndpip_socket *sock, struct tcphdr *th, uint16_t
 
 uint16_t ndpip_tcp_max_xmit(struct ndpip_socket *sock, struct ndpip_pbuf **pb, uint16_t cnt)
 {
+	/*
+	static size_t xmit_ring_size_sum = 0;
+	static size_t xmit_ring_size_iter = 0;
+
+	xmit_ring_size_sum += ndpip_ring_size(sock->xmit_ring);
+	xmit_ring_size_iter++;
+
+	if (xmit_ring_size_iter > 1000000000UL) {
+		xmit_ring_size_sum = 0;
+		xmit_ring_size_iter = 0;
+		printf("TCP-max_xmit: xmit_ring_size_sum=%lu;\n", xmit_ring_size_sum);
+	}
+	*/
+
         if (ndpip_ring_size(sock->xmit_ring) != 0)
                 return 0;
 
@@ -242,11 +258,20 @@ int ndpip_tcp_send_data(struct ndpip_socket *sock, struct ndpip_pbuf **pb, uint1
 	ndpip_ring_push(sock->xmit_ring, pb, cnt);
 	ndpip_iface_xmit(sock->socket_iface, pb, cnt, false);
 
+//	printf("TCP-send: xmit_ring_size=%lu;\n", ndpip_ring_size(sock->xmit_ring));
+
 	return cnt;
 }
 
 int ndpip_tcp_send(struct ndpip_socket *sock, struct ndpip_pbuf **pb, uint16_t cnt)
 {
+	uint64_t tsc_now = ndpip_tsc();
+
+	for (uint16_t idx = 0; idx < cnt; idx++) {
+		struct ndpip_pbuf_meta *pm = ndpip_pbuf_metadata(pb[idx]);
+		pm->xmit_tsc = tsc_now;
+	}
+
 	ndpip_ring_push(sock->xmit_ring, pb, cnt);
 	ndpip_iface_xmit(sock->socket_iface, pb, cnt, false);
 
@@ -256,7 +281,6 @@ int ndpip_tcp_send(struct ndpip_socket *sock, struct ndpip_pbuf **pb, uint16_t c
 void ndpip_tcp_free_acked(struct ndpip_socket *sock)
 {
 	size_t xmit_ring_size = ndpip_ring_size(sock->xmit_ring);
-	size_t free_len = 0;
 
 	if (xmit_ring_size == 0)
 		return;
@@ -268,9 +292,8 @@ void ndpip_tcp_free_acked(struct ndpip_socket *sock)
 	struct tcphdr *th = ndpip_pbuf_data(pb) + sizeof(struct ethhdr) + sizeof(struct iphdr);
 
 	ssize_t max_data = sock->tcp_last_ack - ntohl(th->th_seq);
-//	printf("tcp_last_ack=%u;\n", sock->tcp_last_ack);
 
-	for (; free_len < xmit_ring_size; free_len++) {
+	for (size_t idx = 0; idx < xmit_ring_size; idx++) {
 		struct ndpip_pbuf *pb;
 		size_t cnt = 1;
 
@@ -288,7 +311,7 @@ void ndpip_tcp_free_acked(struct ndpip_socket *sock)
 			break;
 	}
 
-//	printf("xmit_ring_size=%lu;\n", ndpip_ring_size(sock->xmit_ring));
+//	printf("TCP-free_acked: xmit_ring_size=%lu;\n", ndpip_ring_size(sock->xmit_ring));
 }
 
 int ndpip_tcp_feed(struct ndpip_socket *sock, struct sockaddr_in *remote, struct ndpip_pbuf *pb, struct ndpip_pbuf *rpb)
@@ -385,6 +408,9 @@ int ndpip_tcp_feed(struct ndpip_socket *sock, struct sockaddr_in *remote, struct
 		asock->tcp_good_ack = asock->tcp_ack;
 		ndpip_tcp_build_syn(asock, true, rpb);
 		asock->tcp_seq++;
+
+        	struct sockaddr_in key[2] = { asock->local, asock->remote };
+	        ndpip_hashtable_put(ndpip_established_sockets, key, sizeof(key), asock);
 
 		ndpip_list_add(&sock->accept_queue, &asock->accept_queue);
 

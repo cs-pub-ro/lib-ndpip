@@ -22,6 +22,7 @@ CFLAGS += -flto
 CFLAGS += -DNDPIP_LINUX_DPDK
 CFLAGS += -Isrc/include
 CFLAGS += -Ilibdnet-imported/include
+CFLAGS += -IxxHash-imported
 
 CFLAGS += $(shell $(PKGCONF) --cflags libdpdk)
 

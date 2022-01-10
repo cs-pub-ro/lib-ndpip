@@ -10,6 +10,7 @@
 #include <sys/socket.h>
 
 #include "../../../include/ndpip/socket.h"
+#include "ndpip/iface.h"
 #include "ndpip/util.h"
 
 #ifdef NDPIP_UK
@@ -68,5 +69,7 @@ struct ndpip_socket *ndpip_socket_accept(struct ndpip_socket *sock);
 struct ndpip_socket *ndpip_socket_get_by_peer(struct sockaddr_in *local, struct sockaddr_in *peer);
 int ndpip_sock_free(struct ndpip_socket *sock, struct ndpip_pbuf **pb, uint16_t len, bool rx);
 int ndpip_sock_alloc(struct ndpip_socket *sock, struct ndpip_pbuf **pb, uint16_t len, bool rx);
+
+extern struct ndpip_hashtable *ndpip_established_sockets;
 
 #endif
