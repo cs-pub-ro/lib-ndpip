@@ -12,6 +12,7 @@ int ndpip_bind(int sockfd, const struct sockaddr *addr, socklen_t addrlen);
 int ndpip_listen(int sockfd, int backlog);
 int ndpip_connect(int sockfd, const struct sockaddr *addr, socklen_t addrlen);
 int ndpip_accept(int sockfd, struct sockaddr *addr, socklen_t *addrlen);
+int ndpip_close(int sockfd);
 
 int ndpip_setsockopt(int sockfd, int level, int optname, const void *optval, socklen_t optlen);
 int ndpip_recv(int sockfd, struct ndpip_pbuf **pb, uint16_t count);

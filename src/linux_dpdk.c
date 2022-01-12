@@ -43,7 +43,11 @@ bool ndpip_linux_dpdk_iface_timers_thread_running(struct ndpip_iface *iface)
 	return iface_linux_dpdk->iface_timers_thread_running;
 }
 
-void ndpip_linux_dpdk_thread_yield() {}
+void ndpip_linux_dpdk_thread_yield() { }
+
+void ndpip_linux_dpdk_timers_usleep(unsigned usecs) {
+	usleep(usecs);
+}
 
 int ndpip_linux_dpdk_register_iface(int netdev_id)
 {

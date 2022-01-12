@@ -197,12 +197,10 @@ uint16_t ndpip_tcp_max_xmit(struct ndpip_socket *sock, struct ndpip_pbuf **pb, u
 		xmit_ring_size_iter = 0;
 		printf("TCP-max_xmit: xmit_ring_size_sum=%lu;\n", xmit_ring_size_sum);
 	}
-	*/
 
         if (ndpip_ring_size(sock->xmit_ring) != 0)
                 return 0;
 
-	/*
 	uint16_t burst_size = ndpip_iface_get_burst_size(sock->socket_iface);
 	cnt = cnt < burst_size ? cnt : burst_size;
 	*/
@@ -285,6 +283,7 @@ void ndpip_tcp_free_acked(struct ndpip_socket *sock)
 	if (xmit_ring_size == 0)
 		return;
 
+	struct ndpip_pbuf **free_pbs = malloc(xmit_ring_size * sizeof(struct ndpip_pbuf *));
 	struct ndpip_pbuf *pb;
 	size_t cnt = 1;
 
@@ -293,7 +292,8 @@ void ndpip_tcp_free_acked(struct ndpip_socket *sock)
 
 	ssize_t max_data = sock->tcp_last_ack - ntohl(th->th_seq);
 
-	for (size_t idx = 0; idx < xmit_ring_size; idx++) {
+	size_t idx;
+	for (idx = 0; idx < xmit_ring_size; idx++) {
 		struct ndpip_pbuf *pb;
 		size_t cnt = 1;
 
@@ -305,11 +305,14 @@ void ndpip_tcp_free_acked(struct ndpip_socket *sock)
 		max_data -= data_len;
 
 		if (max_data >= 0) {
-			ndpip_pbuf_refcount_add(pb, -1);
+			free_pbs[idx] = pb;
 			ndpip_ring_flush(sock->xmit_ring, 1);
 		} else
 			break;
 	}
+
+	ndpip_sock_free(sock, free_pbs, idx, false);
+	free(free_pbs);
 
 //	printf("TCP-free_acked: xmit_ring_size=%lu;\n", ndpip_ring_size(sock->xmit_ring));
 }

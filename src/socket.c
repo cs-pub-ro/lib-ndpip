@@ -221,29 +221,14 @@ int ndpip_connect(int sockfd, const struct sockaddr *addr, socklen_t addrlen)
 
 	sock->state = CONNECTING;
 
-	struct ndpip_pbuf_pool *pool = ndpip_iface_get_pbuf_pool_rx(sock->socket_iface);
-	if (pool == NULL) {
-		sock->state = CLOSED;
+	struct ndpip_pbuf *pb;
+	
+	if (ndpip_sock_alloc(sock, &pb, 1, false) < 0) {
 		errno = EFAULT;
 		return -1;
 	}
 
-	struct ndpip_pbuf **pb = malloc(sizeof(struct ndpip_pbuf *) * 1);
-	uint16_t cnt = 1;
-
-	if (ndpip_pbuf_pool_request(pool, pb, &cnt) < 0) {
-		sock->state = CLOSED;
-		errno = EFAULT;
-		return -1;
-	}
-
-	if (cnt != 1) {
-		sock->state = CLOSED;
-		errno = EFAULT;
-		return -1;
-	}
-
-	if (ndpip_tcp_build_syn(sock, false, pb[0]) < 0) {
+	if (ndpip_tcp_build_syn(sock, false, pb) < 0) {
 		sock->state = CLOSED;
 		errno = EFAULT;
 		return -1;
@@ -254,7 +239,7 @@ int ndpip_connect(int sockfd, const struct sockaddr *addr, socklen_t addrlen)
 
 	struct sockaddr_in key[2] = { sock->local, sock->remote };
 	ndpip_hashtable_put(ndpip_established_sockets, key, sizeof(key), sock);
-	ndpip_tcp_send(sock, pb, 1);
+	ndpip_tcp_send(sock, &pb, 1);
 
 	while (sock->state == CONNECTING)
 		ndpip_usleep(1);
@@ -401,6 +386,7 @@ int ndpip_alloc(int sockfd, struct ndpip_pbuf **pb, uint16_t len) {
 
 	return ndpip_sock_alloc(sock, pb, len, false);
 }
+
 int ndpip_sock_free(struct ndpip_socket *sock, struct ndpip_pbuf **pb, uint16_t len, bool rx)
 {
 	struct ndpip_pbuf_pool *pool = NULL;
@@ -501,4 +487,43 @@ int ndpip_setsockopt(int sockfd, int level, int optname, const void *optval, soc
 			errno = EINVAL;
 			return -1;
 	}
+}
+
+int ndpip_close(int sockfd)
+{
+	if (sockfd < 0) {
+		errno = EBADF;
+		return -1;
+	}
+
+	struct ndpip_socket *sock = ndpip_socket_get(sockfd);
+	if (sock == NULL) {
+		errno = ENOTSOCK;
+		return -1;
+	}
+
+	struct ndpip_pbuf *pb;
+
+	if (ndpip_sock_alloc(sock, &pb, 1, false) < 0) {
+		errno = EFAULT;
+		return -1;
+	}
+
+	if (ndpip_tcp_build_meta(sock, TH_FIN, pb) < 0) {
+		errno = EFAULT;
+		return -1;
+	}
+
+	sock->state = CLOSING;
+	ndpip_tcp_send(sock, &pb, 1);
+
+	while (sock->state == CLOSING)
+		ndpip_usleep(1);
+
+	if (sock->state != CLOSED) {
+		errno = ECONNREFUSED;
+		return -1;
+	}
+
+	return 0;
 }

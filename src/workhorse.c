@@ -155,6 +155,6 @@ void ndpip_timers_thread(struct ndpip_iface *iface)
 			}
 		}
 
-		ndpip_usleep(25000);
+		ndpip_timers_usleep(25000);
 	}
 }

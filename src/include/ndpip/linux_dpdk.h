@@ -48,6 +48,7 @@ struct ether_addr *ndpip_linux_dpdk_iface_resolve_arp(struct ndpip_iface *iface,
 int ndpip_linux_dpdk_iface_xmit(struct ndpip_iface *iface, struct ndpip_pbuf **pb, uint16_t cnt, bool free);
 
 void ndpip_linux_dpdk_usleep(unsigned usec);
+void ndpip_linux_dpdk_timers_usleep(unsigned usec);
 void ndpip_linux_dpdk_thread_yield();
 
 bool ndpip_linux_dpdk_iface_rx_thread_running(struct ndpip_iface *iface);
@@ -72,6 +73,7 @@ void *ndpip_linux_dpdk_timers_thread(void *argp);
 #define ndpip_iface_resolve_arp ndpip_linux_dpdk_iface_resolve_arp
 
 #define ndpip_usleep ndpip_linux_dpdk_usleep
+#define ndpip_timers_usleep ndpip_linux_dpdk_timers_usleep
 #define ndpip_thread_yield ndpip_linux_dpdk_thread_yield
 
 #define ndpip_iface_rx_thread_running ndpip_linux_dpdk_iface_rx_thread_running
