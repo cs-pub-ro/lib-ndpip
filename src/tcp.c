@@ -317,6 +317,19 @@ void ndpip_tcp_free_acked(struct ndpip_socket *sock)
 //	printf("TCP-free_acked: xmit_ring_size=%lu;\n", ndpip_ring_size(sock->xmit_ring));
 }
 
+void ndpip_tcp_close(struct ndpip_socket *sock)
+{
+	struct sockaddr_in key[2] = { sock->local, sock->remote };
+
+	if ((sock->state != CLOSED) && (sock->state != LISTENING))
+		ndpip_hashtable_del(ndpip_established_sockets, key, sizeof(key));
+
+	if (sock->state == LISTENING)
+		ndpip_hashtable_del(ndpip_listening_sockets, key, sizeof(key));
+
+	sock->state = CLOSED;
+}
+
 int ndpip_tcp_feed(struct ndpip_socket *sock, struct sockaddr_in *remote, struct ndpip_pbuf *pb, struct ndpip_pbuf *rpb)
 {
 	if (pb == NULL) {
@@ -445,9 +458,9 @@ int ndpip_tcp_feed(struct ndpip_socket *sock, struct sockaddr_in *remote, struct
 
 	if (sock->state == CONNECTED) {
 		if (th_flags == (TH_FIN | TH_ACK)) {
-			sock->state = CLOSED;
-
 			ndpip_tcp_build_meta(sock, TH_ACK, rpb);
+			ndpip_tcp_close(sock);
+
 			return 1;
 		}
 
@@ -479,16 +492,16 @@ int ndpip_tcp_feed(struct ndpip_socket *sock, struct sockaddr_in *remote, struct
 
 	if (sock->state == CLOSING) {
 		if (th_flags == (TH_FIN | TH_ACK)) {
-			sock->state = CLOSED;
-
 			ndpip_tcp_build_meta(sock, TH_ACK, rpb);
+			ndpip_tcp_close(sock);
+
 			return 1;
 		}
 	}
 
 err:
 	if (sock->state != LISTENING)
-		sock->state = CLOSED;
+		ndpip_tcp_close(sock);
 
 	ndpip_tcp_build_meta(sock, TH_RST, rpb);
 	return 1;

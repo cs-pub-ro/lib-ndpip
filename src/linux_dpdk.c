@@ -2,6 +2,7 @@
 #include "ndpip/workhorse.h"
 
 #include <assert.h>
+#include <unistd.h>
 
 #include <rte_mbuf.h>
 #include <rte_ethdev.h>

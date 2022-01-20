@@ -71,5 +71,6 @@ int ndpip_sock_free(struct ndpip_socket *sock, struct ndpip_pbuf **pb, uint16_t 
 int ndpip_sock_alloc(struct ndpip_socket *sock, struct ndpip_pbuf **pb, uint16_t len, bool rx);
 
 extern struct ndpip_hashtable *ndpip_established_sockets;
+extern struct ndpip_hashtable *ndpip_listening_sockets;
 
 #endif

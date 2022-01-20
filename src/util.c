@@ -242,10 +242,15 @@ void ndpip_hashtable_del(struct ndpip_hashtable *hashtable, void *key, size_t ke
 	uint64_t hash = ndpip_hash(key, key_size);
 	struct ndpip_list_head *bucket = (void *) &hashtable->hashtable_buckets[hash & hashtable->hashtable_mask];
 
+	struct ndpip_hlist_node *rmnode = NULL;
+
 	ndpip_list_foreach(struct ndpip_hlist_node, hnode, bucket) {
-		if (hnode->hnode_hash == hash) {
-			ndpip_list_del((struct ndpip_list_head *) hnode);
-			free(hnode);
-		}
+		if (hnode->hnode_hash == hash)
+			rmnode = hnode;
+	}
+
+	if (rmnode != NULL) {
+		ndpip_list_del((struct ndpip_list_head *) rmnode);
+		free(rmnode);
 	}
 }

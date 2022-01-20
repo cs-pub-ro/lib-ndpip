@@ -15,7 +15,7 @@
 
 
 struct ndpip_hashtable *ndpip_established_sockets = NULL;
-static struct ndpip_hashtable *listening_sockets = NULL;
+struct ndpip_hashtable *ndpip_listening_sockets = NULL;
 static struct ndpip_socket **socket_table = NULL;
 
 
@@ -29,10 +29,10 @@ struct ndpip_socket *ndpip_socket_get_by_peer(struct sockaddr_in *local, struct 
 	if (ret != NULL)
 		return ret;
 
-	if (listening_sockets == NULL)
+	if (ndpip_listening_sockets == NULL)
 		return NULL;
 
-	return ndpip_hashtable_get(listening_sockets, local, sizeof(struct sockaddr_in));
+	return ndpip_hashtable_get(ndpip_listening_sockets, local, sizeof(struct sockaddr_in));
 }
 
 static struct ndpip_socket *ndpip_socket_get(int sockfd)
@@ -102,7 +102,7 @@ int ndpip_socket(int domain, int type, int protocol)
 	if (socket_table == NULL) {
 		socket_table = calloc(NDPIP_TODO_MAX_FDS, sizeof(struct ndpip_socket *));
 		ndpip_established_sockets = ndpip_hashtable_alloc(NDPIP_TODO_ESTABLISHED_SOCKETS_BUCKETS);
-		listening_sockets = ndpip_hashtable_alloc(NDPIP_TODO_LISTENING_SOCKETS_BUCKETS);
+		ndpip_listening_sockets = ndpip_hashtable_alloc(NDPIP_TODO_LISTENING_SOCKETS_BUCKETS);
 	}
 
 	struct ndpip_socket *sock = ndpip_socket_new(domain, type, protocol);
@@ -146,7 +146,7 @@ int ndpip_bind(int sockfd, const struct sockaddr *addr, socklen_t addrlen)
 		if (socket_table[idx] == NULL)
 			continue;
 
-		if (memcmp(&socket_table[idx]->local, &addr_in, sizeof(struct sockaddr_in)) == 0) {
+		if (memcmp(&socket_table[idx]->local, addr_in, sizeof(struct sockaddr_in)) == 0) {
 			errno = EADDRINUSE;
 			return -1;
 		}
@@ -181,7 +181,7 @@ int ndpip_listen(int sockfd, int backlog)
 	}
 
 	sock->state = LISTENING;
-	ndpip_hashtable_put(listening_sockets, &sock->local, sizeof(struct sockaddr_in), sock);
+	ndpip_hashtable_put(ndpip_listening_sockets, &sock->local, sizeof(struct sockaddr_in), sock);
 
 	return 0;
 }
