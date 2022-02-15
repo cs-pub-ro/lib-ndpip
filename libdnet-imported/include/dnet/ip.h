@@ -15,7 +15,9 @@
 
 #include <netinet/ip.h>
 
-void tcpip_checksum(struct iphdr *iph);
+uint16_t ipv4_checksum(struct iphdr *iph);
+uint16_t ipv4_checksum_pheader(struct iphdr *iph, uint16_t len);
+uint16_t tcpv4_checksum(struct iphdr *iph);
 
 int32_t ip_cksum_add(const void *buf, uint16_t len, int32_t cksum);
 #define ip_cksum_carry(x) \

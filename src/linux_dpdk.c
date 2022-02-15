@@ -61,11 +61,25 @@ int ndpip_linux_dpdk_register_iface(int netdev_id)
 	(&iface)->iface_rx_queue_id = 0;
 	(&iface)->iface_tx_queue_id = 0;
 
-	struct rte_eth_conf conf;
-	memset(&conf, 0, sizeof(struct rte_eth_conf));
-        conf.rxmode.max_rx_pkt_len = NDPIP_TODO_MTU;
+	memset(&(&iface)->iface_conf, 0, sizeof(struct rte_eth_conf));
+        (&iface)->iface_conf.rxmode.max_rx_pkt_len = NDPIP_TODO_MTU;
 
-	if (rte_eth_dev_configure((&iface)->iface_netdev_id, 1, 1, &conf) < 0)
+	if (rte_eth_dev_info_get((&iface)->iface_netdev_id, &(&iface)->iface_dev_info) < 0)
+		return -1;
+
+	if ((&iface)->iface_dev_info.tx_offload_capa & DEV_TX_OFFLOAD_IPV4_CKSUM)
+        	(&iface)->iface_conf.txmode.offloads |= DEV_TX_OFFLOAD_IPV4_CKSUM;
+
+	if ((&iface)->iface_dev_info.tx_offload_capa & DEV_TX_OFFLOAD_TCP_CKSUM)
+        	(&iface)->iface_conf.txmode.offloads |= DEV_TX_OFFLOAD_TCP_CKSUM;
+
+	if ((&iface)->iface_dev_info.rx_offload_capa & DEV_RX_OFFLOAD_IPV4_CKSUM)
+        	(&iface)->iface_conf.rxmode.offloads |= DEV_RX_OFFLOAD_IPV4_CKSUM;
+
+	if ((&iface)->iface_dev_info.rx_offload_capa & DEV_RX_OFFLOAD_TCP_CKSUM)
+        	(&iface)->iface_conf.rxmode.offloads |= DEV_RX_OFFLOAD_TCP_CKSUM;
+
+	if (rte_eth_dev_configure((&iface)->iface_netdev_id, 1, 1, &(&iface)->iface_conf) < 0)
 		return -1;
 
 	(&iface)->iface_pbuf_pool_rx = (void *) rte_pktmbuf_pool_create("ndpip_pool_rx", NDPIP_TODO_NB_MBUF, NDPIP_TODO_MEMPOOL_CACHE_SZ, NDPIP_DPDK_LINUX_MBUF_PRIVATE, NDPIP_TODO_MBUF_SIZE, rte_socket_id());
@@ -117,6 +131,11 @@ int ndpip_linux_dpdk_iface_xmit(struct ndpip_iface *iface, struct ndpip_pbuf **p
 			rte_mbuf_refcnt_update(mb[idx], 1);
 
 	uint16_t max_burst = ndpip_iface_get_burst_size(iface);
+
+	rte_eth_tx_prepare(
+		iface_linux_dpdk->iface_netdev_id,
+		iface_linux_dpdk->iface_tx_queue_id,
+		mb, cnt);
 
 	for (uint16_t idx = 0; idx < cnt;) {
 		uint16_t cnt2 = cnt - idx;
@@ -324,4 +343,88 @@ void *ndpip_linux_dpdk_timers_thread(void *argp)
 	ndpip_timers_thread(iface);
 
 	return NULL;
+}
+
+bool ndpip_linux_dpdk_iface_has_offload(struct ndpip_iface *iface, enum ndpip_iface_offload off)
+{
+	struct ndpip_linux_dpdk_iface *iface_linux_dpdk = (void *) iface;
+
+	switch (off) {
+		case NDPIP_IFACE_OFFLOAD_TX_IPV4_CSUM:
+			return iface_linux_dpdk->iface_conf.txmode.offloads & DEV_TX_OFFLOAD_IPV4_CKSUM;
+
+		case NDPIP_IFACE_OFFLOAD_TX_TCPV4_CSUM:
+			return iface_linux_dpdk->iface_conf.txmode.offloads & DEV_TX_OFFLOAD_TCP_CKSUM;
+
+		case NDPIP_IFACE_OFFLOAD_RX_IPV4_CSUM:
+			return iface_linux_dpdk->iface_conf.rxmode.offloads & DEV_RX_OFFLOAD_IPV4_CKSUM;
+
+		case NDPIP_IFACE_OFFLOAD_RX_TCPV4_CSUM:
+			return iface_linux_dpdk->iface_conf.rxmode.offloads & DEV_RX_OFFLOAD_TCP_CKSUM;
+
+		default:
+			return false;
+	}
+}
+
+bool ndpip_linux_dpdk_pbuf_has_flag(struct ndpip_pbuf *pb, enum ndpip_pbuf_flag flag)
+{
+	struct rte_mbuf *mb = (void *) pb;
+
+	switch (flag) {
+		case NDPIP_PBUF_F_RX_L4_CSUM_GOOD:
+			return (mb->ol_flags & PKT_RX_L4_CKSUM_MASK) == PKT_RX_L4_CKSUM_GOOD;
+
+		case NDPIP_PBUF_F_RX_L4_CSUM_BAD:
+			return (mb->ol_flags & PKT_RX_L4_CKSUM_MASK) == PKT_RX_L4_CKSUM_BAD;
+
+		case NDPIP_PBUF_F_RX_L4_CSUM_NONE:
+			return (mb->ol_flags & PKT_RX_L4_CKSUM_MASK) == PKT_RX_L4_CKSUM_NONE;
+
+		default:
+			return false;
+	}
+}
+
+void ndpip_linux_dpdk_pbuf_set_flag(struct ndpip_pbuf *pb, enum ndpip_pbuf_flag flag, bool val)
+{
+	uint64_t ol_flag;
+
+	switch (flag) {
+		case NDPIP_PBUF_F_TX_IP_CKSUM:
+			ol_flag = PKT_TX_IP_CKSUM;
+			break;
+
+		case NDPIP_PBUF_F_TX_TCP_CKSUM:
+			ol_flag = PKT_TX_TCP_CKSUM;
+			break;
+
+		case NDPIP_PBUF_F_TX_IPV4:
+			ol_flag = PKT_TX_IPV4;
+			break;
+
+		default:
+			return;
+	}
+
+	struct rte_mbuf *mb = (void *) pb;
+
+	if (val)
+		mb->ol_flags |= ol_flag;
+	else
+		mb->ol_flags &= ~ol_flag;
+}
+
+void ndpip_linux_dpdk_pbuf_set_l2_len(struct ndpip_pbuf *pb, uint16_t val)
+{
+	struct rte_mbuf *mb = (void *) pb;
+
+	mb->l2_len = val;
+}
+
+void ndpip_linux_dpdk_pbuf_set_l3_len(struct ndpip_pbuf *pb, uint16_t val)
+{
+	struct rte_mbuf *mb = (void *) pb;
+
+	mb->l3_len = val;
 }

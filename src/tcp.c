@@ -18,6 +18,8 @@
 #define NDPIP_TODO_TCP_RETRANSMIT_TIMEOUT ((struct timespec) { .tv_sec = 0, .tv_nsec = 25000000 })
 
 
+static void ndpip_tcp_prepare_pbuf(struct ndpip_socket *sock, struct ndpip_pbuf *pb, struct iphdr *iph, struct tcphdr *th);
+
 int ndpip_tcp_build_xmit_template(struct ndpip_socket *sock)
 {
 	struct ethhdr *eth = (void *) sock->xmit_template;
@@ -82,7 +84,7 @@ int ndpip_tcp_build_meta(struct ndpip_socket *sock, uint8_t flags, struct ndpip_
 	th->th_ack = htonl(sock->tcp_ack);
 	th->th_win = htons(NDPIP_TODO_TCP_WIN_SIZE);
 
-	tcpip_checksum(iph);
+	ndpip_tcp_prepare_pbuf(sock, pb, iph, th);
 
 	return 0;
 }
@@ -124,7 +126,7 @@ int ndpip_tcp_build_syn(struct ndpip_socket *sock, bool ack, struct ndpip_pbuf *
 
 	th->th_off += (sizeof(struct ndpip_tcp_option_mss) + sizeof(struct ndpip_tcp_option_scale) + sizeof(struct ndpip_tcp_option_nop)) >> 2;
 
-	tcpip_checksum(iph);
+	ndpip_tcp_prepare_pbuf(sock, pb, iph, th);
 
 	return 0;
 }
@@ -253,10 +255,10 @@ int ndpip_tcp_send_data(struct ndpip_socket *sock, struct ndpip_pbuf **pb, uint1
 		th->th_ack = htonl(sock->tcp_ack);
 		th->th_flags = TH_ACK;
 
+		ndpip_tcp_prepare_pbuf(sock, pb[idx], iph, th);
+
 //		printf("tcp_seq=%u;\n", sock->tcp_seq);
 		sock->tcp_seq += data_len;
-
-		tcpip_checksum(iph);
 
 		struct ndpip_pbuf_meta *pm = ndpip_pbuf_metadata(pb[idx]);
 		pm->xmit_tsc = tsc_now;
@@ -356,7 +358,7 @@ void ndpip_tcp_close(struct ndpip_socket *sock)
 int ndpip_tcp_feed(struct ndpip_socket *sock, struct sockaddr_in *remote, struct ndpip_pbuf *pb, struct ndpip_pbuf *rpb)
 {
 	if (pb == NULL) {
-		if ((sock->state == CONNECTED) && (sock->tcp_rsp_ack)) {
+		if ((sock->state == CONNECTED) && sock->tcp_rsp_ack) {
 			ndpip_tcp_build_meta(sock, TH_ACK, rpb);
 			sock->tcp_rsp_ack = false;
 			return 1;
@@ -528,4 +530,22 @@ err:
 
 	ndpip_tcp_build_meta(sock, TH_RST, rpb);
 	return 1;
+}
+
+static void ndpip_tcp_prepare_pbuf(struct ndpip_socket *sock, struct ndpip_pbuf *pb, struct iphdr *iph, struct tcphdr *th)
+{
+	ndpip_pbuf_set_l2_len(pb, sizeof(struct ethhdr));
+	ndpip_pbuf_set_l3_len(pb, sizeof(struct iphdr));
+
+	ndpip_pbuf_set_flag(pb, NDPIP_PBUF_F_TX_IPV4, true);
+
+	if (ndpip_iface_has_offload(sock->socket_iface, NDPIP_IFACE_OFFLOAD_TX_IPV4_CSUM))
+		ndpip_pbuf_set_flag(pb, NDPIP_PBUF_F_TX_IP_CKSUM, true);
+	else
+		iph->check = ipv4_checksum(iph);
+
+	if (ndpip_iface_has_offload(sock->socket_iface, NDPIP_IFACE_OFFLOAD_TX_TCPV4_CSUM))
+		ndpip_pbuf_set_flag(pb, NDPIP_PBUF_F_TX_TCP_CKSUM, true);
+	else
+		th->th_sum = tcpv4_checksum(iph);
 }

@@ -19,6 +19,8 @@
 #include <netinet/ip.h>
 #include <netinet/tcp.h>
 
+#include <dnet/ip.h>
+
 int ndpip_rx_thread(void *argp)
 {
 	struct ndpip_iface *iface = argp;
@@ -89,6 +91,11 @@ int ndpip_rx_thread(void *argp)
 
 			struct iphdr *iph = ((void *) eth) + sizeof(struct ethhdr);
 
+			if (!ndpip_iface_has_offload(iface, NDPIP_IFACE_OFFLOAD_RX_IPV4_CSUM)) {
+				if (ipv4_checksum(iph) != 0)
+					goto free_pkt;
+			}
+
 			if (!((iph->ihl == 5) && (iph->version == 4)))
 				goto free_pkt;
 
@@ -99,6 +106,14 @@ int ndpip_rx_thread(void *argp)
 				goto free_pkt;
 
 			struct tcphdr *th = ((void *) iph) + sizeof(struct iphdr);
+
+			if (!ndpip_iface_has_offload(iface, NDPIP_IFACE_OFFLOAD_RX_TCPV4_CSUM)) {
+				if (tcpv4_checksum(iph) != 0)
+					goto free_pkt;
+			} else {
+				if (ndpip_pbuf_has_flag(pb, NDPIP_PBUF_F_RX_L4_CSUM_BAD))
+					goto free_pkt;
+			}
 
 			struct sockaddr_in local = {
 				.sin_family = AF_INET,
@@ -122,7 +137,7 @@ int ndpip_rx_thread(void *argp)
 			}
 
 			ndpip_pbuf_offset(pb, -(int) (sizeof(struct ethhdr) + sizeof(struct iphdr)));
-			ndpip_pbuf_resize(pb, ntohs(iph->tot_len) - sizeof(struct iphdr));
+			ndpip_pbuf_resize(pb, ntohs(iph->tot_len) - (iph->ihl << 2));
 			int r = ndpip_tcp_feed(sock, &remote, pb, replies[replies_len]);
 			if (r == 1)
 				replies_len++;
