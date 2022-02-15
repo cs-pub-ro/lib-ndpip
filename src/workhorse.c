@@ -50,15 +50,41 @@ int ndpip_rx_thread(void *argp)
 		for (uint16_t idx = 0; idx < pkt_cnt; idx++) {
 			struct ndpip_pbuf *pb = pkts[idx];
 
-			if (ndpip_pbuf_length(pb) < (sizeof(struct ethhdr) + sizeof(struct iphdr) + sizeof(struct tcphdr)))
+			if (ndpip_pbuf_length(pb) < sizeof(struct ethhdr))
 				goto free_pkt;
 
 			struct ethhdr *eth = ndpip_pbuf_data(pb);
 
-			if (memcmp(eth->h_dest, ndpip_iface_get_ethaddr(iface), ETH_ALEN) != 0)
+			uint8_t bcast[] = { 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF };
+			if ((memcmp(eth->h_dest, ndpip_iface_get_ethaddr(iface), ETH_ALEN) != 0) &&
+				(memcmp(eth->h_dest, bcast, ETH_ALEN) != 0))
 				goto free_pkt;
 
+			if (ntohs(eth->h_proto) == ETH_P_EQDSCN) {
+				struct eqds_cn *cn = ((void *) eth) + sizeof(struct ethhdr);
+
+				ndpip_socket_foreach(sock) {
+					if ((*sock) == NULL)
+						continue;
+
+					if ((*sock)->remote.sin_addr.s_addr == cn->destination) {
+//						printf("CN: flags=%d; destination=%X;\n", cn->flags, cn->destination);
+
+						if (cn->flags & CN_PAUSE)
+							(*sock)->paused = true;
+
+						if (cn->flags & CN_RESUME)
+							(*sock)->paused = false;
+					}
+				}
+
+				goto free_pkt;
+			}
+
 			if (ntohs(eth->h_proto) != ETH_P_IP)
+				goto free_pkt;
+
+			if (ndpip_pbuf_length(pb) < (sizeof(struct ethhdr) + sizeof(struct iphdr) + sizeof(struct tcphdr)))
 				goto free_pkt;
 
 			struct iphdr *iph = ((void *) eth) + sizeof(struct ethhdr);

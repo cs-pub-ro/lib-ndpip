@@ -7,7 +7,6 @@
 #include "ndpip/workhorse.h"
 
 
-#define NDPIP_TODO_MAX_FDS 1024
 #define NDPIP_TODO_ESTABLISHED_SOCKETS_BUCKETS 1024
 #define NDPIP_TODO_LISTENING_SOCKETS_BUCKETS 32
 #define NDPIP_TODO_SOCKET_XMIT_RING_LENGTH (1 << 20)
@@ -16,7 +15,7 @@
 
 struct ndpip_hashtable *ndpip_established_sockets = NULL;
 struct ndpip_hashtable *ndpip_listening_sockets = NULL;
-static struct ndpip_socket **socket_table = NULL;
+struct ndpip_socket **socket_table = NULL;
 
 
 struct ndpip_socket *ndpip_socket_get_by_peer(struct sockaddr_in *local, struct sockaddr_in *remote)
@@ -63,6 +62,7 @@ struct ndpip_socket *ndpip_socket_new(int domain, int type, int protocol)
 
 	sock->socket_id = socket_id;
 	sock->socket_iface = NULL;
+	sock->paused = false;
 
 	sock->state = NEW;
 
@@ -88,6 +88,7 @@ struct ndpip_socket *ndpip_socket_new(int domain, int type, int protocol)
 	sock->tcp_send_win_scale = 0;
 	sock->tcp_recovery = false;
 	sock->tcp_retransmission = false;
+	sock->tcp_rto = false;
 	sock->tcp_rsp_ack = false;
 	sock->rx_loop_seen = false;
 

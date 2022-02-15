@@ -143,10 +143,10 @@ void ndpip_tcp_rto_handler(void *argp) {
 //	printf("TCP-rto: xmit_ring_size=%lu;\n", ndpip_ring_size(sock->xmit_ring));
 
 	if (ndpip_ring_peek(sock->xmit_ring, &cnt, &pb) < 0)
-		goto ret;
+		goto ret_no_rto;
 
 	if (cnt != 1)
-		goto ret;
+		goto ret_no_rto;
 
 	struct timespec exp1;
 	struct ndpip_pbuf_meta *pm = ndpip_pbuf_metadata(pb);
@@ -154,15 +154,21 @@ void ndpip_tcp_rto_handler(void *argp) {
 	ndpip_timespec_add(&exp1, NDPIP_TODO_TCP_RETRANSMIT_TIMEOUT);
 
 	if ((&now)->tv_sec < (&exp1)->tv_sec)
-		goto ret;
+		goto ret_no_rto;
 
 	if (((&now)->tv_sec == (&exp1)->tv_sec) &&
 		((&now)->tv_nsec < (&exp1)->tv_nsec))
-		goto ret;
+		goto ret_no_rto;
+
+	sock->tcp_rto = true;
 
 	ndpip_iface_xmit(sock->socket_iface, &pb, 1, false);
+	goto ret_rto;
 
-ret:
+ret_no_rto:
+	sock->tcp_rto = false;
+
+ret_rto:
 	ndpip_timespec_add(&expire, NDPIP_TODO_TCP_RETRANSMIT_TIMEOUT);
 	ndpip_timer_arm(sock->socket_timer_rto, &expire);
 }
@@ -200,10 +206,13 @@ uint16_t ndpip_tcp_max_xmit(struct ndpip_socket *sock, struct ndpip_pbuf **pb, u
 
         if (ndpip_ring_size(sock->xmit_ring) != 0)
                 return 0;
+	*/
+	
+	if (sock->paused || sock->tcp_rto)
+		return 0;
 
 	uint16_t burst_size = ndpip_iface_get_burst_size(sock->socket_iface);
 	cnt = cnt < burst_size ? cnt : burst_size;
-	*/
 
 	uint32_t max_data = sock->tcp_max_seq - sock->tcp_seq;
 	uint32_t seq = 0;
@@ -278,7 +287,21 @@ int ndpip_tcp_send(struct ndpip_socket *sock, struct ndpip_pbuf **pb, uint16_t c
 
 void ndpip_tcp_free_acked(struct ndpip_socket *sock)
 {
+	static uint64_t xmit_ring_size_acc = 0;
+	static uint64_t xmit_ring_size_acc_iter = 0;
+	static uint64_t xmit_ring_size_acc_before = 0;
+
 	size_t xmit_ring_size = ndpip_ring_size(sock->xmit_ring);
+
+	xmit_ring_size_acc += xmit_ring_size;
+	xmit_ring_size_acc_iter++;
+	if ((rdtsc() - xmit_ring_size_acc_before) > 1000000000UL) {
+		printf("xmit_ring_size_acc=%lu;\n", xmit_ring_size_acc / xmit_ring_size_acc_iter);
+
+		xmit_ring_size_acc = 0;
+		xmit_ring_size_acc_iter = 0;
+		xmit_ring_size_acc_before = rdtsc();
+	}
 
 	if (xmit_ring_size == 0)
 		return;
