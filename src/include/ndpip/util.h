@@ -10,9 +10,11 @@ struct ndpip_list_head {
 	struct ndpip_list_head *prev;
 };
 
-#define ETH_P_EQDSCN 0x88B5
-#define CN_PAUSE (1 << 0)
-#define CN_RESUME (1 << 1)
+#define ETH_P_EQDSCN ETH_P_802_EX1
+
+#define CN_GRANTS_INC 0
+#define CN_GRANTS_GET 1
+#define CN_GRANTS_SET 2
 
 #define NDPIP_LIST_HEAD(name) struct ndpip_list_head name = { (&name), (&name) };
 
@@ -63,8 +65,10 @@ struct ndpip_hashtable {
 };
 
 struct eqds_cn {
-	uint8_t flags;
 	uint32_t destination;
+	uint8_t operation;
+	uint32_t value1;
+	uint32_t value2;
 } __attribute__((packed));
 
 struct ndpip_ring *ndpip_ring_alloc(size_t length, size_t esize);

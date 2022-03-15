@@ -15,6 +15,8 @@
 #include <stdint.h>
 #include <stdlib.h>
 
+#include <arpa/inet.h>
+
 #include <netinet/ether.h>
 #include <netinet/ip.h>
 #include <netinet/tcp.h>
@@ -64,19 +66,26 @@ int ndpip_rx_thread(void *argp)
 
 			if (ntohs(eth->h_proto) == ETH_P_EQDSCN) {
 				struct eqds_cn *cn = ((void *) eth) + sizeof(struct ethhdr);
+				struct in_addr cn_destination = { .s_addr = cn->destination };
+				int32_t cn_value1 = ntohl(cn->value1);
+				int32_t cn_value2 = ntohl(cn->value2);
+
+				// printf("CN: operation=%d; destination=%s; value1=%d; value2=%d;\n", cn->operation, inet_ntoa(cn_destination), cn_value1, cn_value2);
 
 				ndpip_socket_foreach(sock) {
 					if ((*sock) == NULL)
 						continue;
 
 					if ((*sock)->remote.sin_addr.s_addr == cn->destination) {
-//						printf("CN: flags=%d; destination=%X;\n", cn->flags, cn->destination);
+						if ((cn->operation == CN_GRANTS_SET) && ((*sock)->grants_overhead < 0)) {
+							(*sock)->grants = cn_value1;
+							(*sock)->grants_overhead = cn_value2;
+						}
 
-						if (cn->flags & CN_PAUSE)
-							(*sock)->paused = true;
+						if ((cn->operation == CN_GRANTS_INC) && ((*sock)->grants_overhead >= 0))
+							(*sock)->grants += cn_value1;
 
-						if (cn->flags & CN_RESUME)
-							(*sock)->paused = false;
+						// printf("CN: grants=%ld;\n", (*sock)->grants);
 					}
 				}
 
@@ -151,8 +160,12 @@ free_pkt:
 
 		for (uint16_t idx = 0; idx < reply_sockets_len; idx++) {
 			int r = ndpip_tcp_feed(reply_sockets[idx], NULL, NULL, replies[replies_len]);
-			if (r == 1)
+			if (r == 1) {
+				reply_sockets[idx]->grants -= ndpip_pbuf_length(replies[replies_len]);
+				reply_sockets[idx]->grants -= reply_sockets[idx]->grants_overhead;
+				// printf("reply: grants=%ld;\n", reply_sockets[idx]->grants);
 				replies_len++;
+			}
 
 			reply_sockets[idx]->rx_loop_seen = false;
 		}
