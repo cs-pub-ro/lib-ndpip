@@ -23,7 +23,7 @@
 
 #define NDPIP_TODO_MAX_FDS 1024
 #define ndpip_socket_foreach(sock) \
-	for (struct ndpip_socket **(sock) = socket_table; (sock) < (socket_table + NDPIP_TODO_MAX_FDS); sock++)
+	for (struct ndpip_socket **(sock) = socket_table; (socket_table != NULL) && ((sock) < (socket_table + NDPIP_TODO_MAX_FDS)); sock++)
 
 struct ndpip_socket {
 	struct ndpip_list_head list;
@@ -46,14 +46,15 @@ struct ndpip_socket {
 	struct sockaddr_in local;
 	struct sockaddr_in remote;
 
-	bool paused;
-
 	uint8_t xmit_template[sizeof(struct ethhdr) + sizeof(struct iphdr) + sizeof(struct tcphdr)];
 
 	struct ndpip_ring *xmit_ring;
 	struct ndpip_ring *recv_ring;
 
 	struct ndpip_timer *socket_timer_rto;
+
+	int64_t grants;
+	int64_t grants_overhead;
 
 	uint32_t tcp_seq, tcp_ack, tcp_last_ack, tcp_good_ack;
 
@@ -80,6 +81,5 @@ int ndpip_sock_alloc(struct ndpip_socket *sock, struct ndpip_pbuf **pb, uint16_t
 extern struct ndpip_hashtable *ndpip_established_sockets;
 extern struct ndpip_hashtable *ndpip_listening_sockets;
 extern struct ndpip_socket **socket_table;
-
 
 #endif

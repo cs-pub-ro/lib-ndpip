@@ -17,6 +17,38 @@ struct ndpip_hashtable *ndpip_established_sockets = NULL;
 struct ndpip_hashtable *ndpip_listening_sockets = NULL;
 struct ndpip_socket **socket_table = NULL;
 
+static int ndpip_socket_grants_get(struct ndpip_socket *sock) {
+	struct ndpip_pbuf *pb;
+	
+	if (ndpip_sock_alloc(sock, &pb, 1, false) < 0)
+		return -1;
+
+	ndpip_pbuf_resize(pb, sizeof(struct ethhdr) + sizeof(struct eqds_cn));
+
+	struct ethhdr *eth = ndpip_pbuf_data(pb);
+
+	struct ether_addr *eth_src = ndpip_iface_get_ethaddr(sock->socket_iface);
+	if (eth_src == NULL)
+		return -1;
+
+	uint8_t eth_dst[] = { 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF };
+
+        memcpy(eth->h_dest, eth_dst, ETH_ALEN);
+        memcpy(eth->h_source, eth_src, ETH_ALEN);
+
+	eth->h_proto = htons(ETH_P_EQDSCN);
+
+	struct eqds_cn *cn = ((void *) eth) + sizeof(struct ether_header);
+	cn->destination = sock->remote.sin_addr.s_addr;
+	cn->operation = CN_GRANTS_GET;
+
+	ndpip_iface_xmit(sock->socket_iface, &pb, 1, true);
+
+	while (sock->grants_overhead < 0)
+		ndpip_usleep(1);
+
+	return 0;
+}
 
 struct ndpip_socket *ndpip_socket_get_by_peer(struct sockaddr_in *local, struct sockaddr_in *remote)
 {
@@ -62,7 +94,8 @@ struct ndpip_socket *ndpip_socket_new(int domain, int type, int protocol)
 
 	sock->socket_id = socket_id;
 	sock->socket_iface = NULL;
-	sock->paused = false;
+	sock->grants = 0;
+	sock->grants_overhead = -1;
 
 	sock->state = NEW;
 
@@ -216,6 +249,12 @@ int ndpip_connect(int sockfd, const struct sockaddr *addr, socklen_t addrlen)
 	sock->remote.sin_port = addr_in->sin_port;
 
 	if (ndpip_tcp_build_xmit_template(sock) < 0) {
+		errno = EFAULT;
+		return -1;
+	}
+
+	if (ndpip_socket_grants_get(sock) < 0) {
+		sock->state = CLOSED;
 		errno = EFAULT;
 		return -1;
 	}
@@ -446,6 +485,9 @@ struct ndpip_socket *ndpip_socket_accept(struct ndpip_socket *sock)
 
 	struct ndpip_socket *asock = ((void *) sock->accept_queue.next) - offsetof(struct ndpip_socket, accept_queue);
 	ndpip_list_del(sock->accept_queue.next);
+
+	if (ndpip_socket_grants_get(asock) < 0)
+		return NULL;
 
 	return asock;
 }
