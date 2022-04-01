@@ -12,9 +12,8 @@ struct ndpip_list_head {
 
 #define ETH_P_EQDSCN ETH_P_802_EX1
 
-#define CN_GRANTS_INC 0
-#define CN_GRANTS_GET 1
-#define CN_GRANTS_SET 2
+#define CN_GRANTS_GET 0
+#define CN_GRANTS_ADD 1
 
 #define NDPIP_LIST_HEAD(name) struct ndpip_list_head name = { (&name), (&name) };
 

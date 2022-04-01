@@ -23,6 +23,10 @@
 
 #include <dnet/ip.h>
 
+bool ndpip_log_grants = false;
+int64_t (*ndpip_log_grants_msg)[5];
+size_t ndpip_log_grants_idx = 0;
+
 int ndpip_rx_thread(void *argp)
 {
 	struct ndpip_iface *iface = argp;
@@ -35,6 +39,9 @@ int ndpip_rx_thread(void *argp)
 	while (ndpip_iface_rx_thread_running(iface)) {
 		uint16_t pkt_cnt = burst_size;
 		struct ndpip_pbuf *pkts[pkt_cnt];
+		
+		uint16_t freed_pkt_cnt = 0;
+		struct ndpip_pbuf *freed_pkts[pkt_cnt];
 
 		int r = ndpip_iface_rx_burst(iface, (void *) pkts, &pkt_cnt);
 
@@ -70,22 +77,25 @@ int ndpip_rx_thread(void *argp)
 				int32_t cn_value1 = ntohl(cn->value1);
 				int32_t cn_value2 = ntohl(cn->value2);
 
-				// printf("CN: operation=%d; destination=%s; value1=%d; value2=%d;\n", cn->operation, inet_ntoa(cn_destination), cn_value1, cn_value2);
-
 				ndpip_socket_foreach(sock) {
 					if ((*sock) == NULL)
 						continue;
 
 					if ((*sock)->remote.sin_addr.s_addr == cn->destination) {
-						if ((cn->operation == CN_GRANTS_SET) && ((*sock)->grants_overhead < 0)) {
-							(*sock)->grants = cn_value1;
-							(*sock)->grants_overhead = cn_value2;
+						if (cn->operation == CN_GRANTS_ADD) {
+							(*sock)->grants += cn_value1;
+							(*sock)->grants_overcommit = 0;
 						}
 
-						if ((cn->operation == CN_GRANTS_INC) && ((*sock)->grants_overhead >= 0))
-							(*sock)->grants += cn_value1;
+						if (ndpip_log_grants) {
+							ndpip_log_grants_msg[ndpip_log_grants_idx][0] = (*sock)->grants;
+							ndpip_log_grants_msg[ndpip_log_grants_idx][1] = cn->operation;
+							ndpip_log_grants_msg[ndpip_log_grants_idx][2] = cn->destination;
+							ndpip_log_grants_msg[ndpip_log_grants_idx][3] = cn_value1;
+							ndpip_log_grants_msg[ndpip_log_grants_idx][4] = cn_value2;
 
-						// printf("CN: grants=%ld;\n", (*sock)->grants);
+							ndpip_log_grants_idx++;
+						}
 					}
 				}
 
@@ -155,8 +165,10 @@ int ndpip_rx_thread(void *argp)
 				continue;
 
 free_pkt:
-			ndpip_pbuf_pool_release(ndpip_iface_get_pbuf_pool_rx(iface), &pb, 1);
+			freed_pkts[freed_pkt_cnt++] = pb;
 		}
+
+		ndpip_pbuf_pool_release(ndpip_iface_get_pbuf_pool_rx(iface), freed_pkts, freed_pkt_cnt);
 
 		for (uint16_t idx = 0; idx < reply_sockets_len; idx++) {
 			struct ndpip_socket *reply_socket = reply_sockets[idx];
@@ -165,8 +177,16 @@ free_pkt:
 			int r = ndpip_tcp_feed(reply_socket, NULL, NULL, reply);
 			if (r == 1) {
 				reply_socket->grants -= ndpip_pbuf_length(reply) + reply_socket->grants_overhead;
-				// printf("reply: grants=%ld;\n", reply_sockets[idx]->grants);
 				replies_len++;
+
+				/*
+				if (ndpip_log_grants) {
+					ndpip_log_grants_idx++;
+
+					ndpip_log_grants_msg[ndpip_log_grants_idx][0] = 1;
+					ndpip_log_grants_msg[ndpip_log_grants_idx][1] = reply_socket->grants;
+				}
+				*/
 			}
 
 			reply_socket->rx_loop_seen = false;

@@ -1,6 +1,7 @@
 APP = eqds-tcp-perf
 
 AR = gcc-ar
+CC = gcc
 PKGCONF = pkg-config
 
 SRCS-y += src/tcp.c
@@ -28,8 +29,8 @@ CFLAGS += $(shell $(PKGCONF) --cflags libdpdk)
 
 all: $(LIB)
 
-$(OBJS-y):
-	$(CC) -c $(CFLAGS) -o $@ $(patsubst %.c.o,%.c,$@)
+%.c.o: %.c
+	$(CC) -c $(CFLAGS) -o $@ $<
 
 $(LIB): $(OBJS-y)
 	$(AR) rcs $@ $(OBJS-y)

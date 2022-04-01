@@ -54,6 +54,7 @@ struct ndpip_iface *ndpip_linux_dpdk_iface_get_by_inaddr(struct in_addr addr);
 
 struct ether_addr *ndpip_linux_dpdk_iface_get_ethaddr(struct ndpip_iface *iface);
 struct in_addr *ndpip_linux_dpdk_iface_get_inaddr(struct ndpip_iface *iface);
+uint16_t ndpip_linux_dpdk_iface_get_mtu(struct ndpip_iface *iface);
 
 struct ether_addr *ndpip_linux_dpdk_iface_resolve_arp(struct ndpip_iface *iface, struct in_addr peer);
 bool ndpip_linux_dpdk_iface_has_offload(struct ndpip_iface *iface, enum ndpip_iface_offload off);
@@ -77,14 +78,12 @@ uint16_t ndpip_linux_dpdk_iface_get_burst_size(struct ndpip_iface *iface);
 
 void ndpip_linux_dpdk_pbuf_refcount_add(struct ndpip_pbuf *pb, int16_t val);
 
-uint64_t ndpip_linux_dpdk_tsc();
-void ndpip_linux_dpdk_tsc2time(uint64_t tsc, struct timespec *req);
-
 void *ndpip_linux_dpdk_timers_thread(void *argp);
 
 #define ndpip_iface_get_by_inaddr ndpip_linux_dpdk_iface_get_by_inaddr
 #define ndpip_iface_get_ethaddr ndpip_linux_dpdk_iface_get_ethaddr
 #define ndpip_iface_get_inaddr ndpip_linux_dpdk_iface_get_inaddr
+#define ndpip_iface_get_mtu ndpip_linux_dpdk_iface_get_mtu
 #define ndpip_iface_get_pbuf_pool_rx(iface) (((struct ndpip_linux_dpdk_iface *) (iface))->iface_pbuf_pool_rx)
 #define ndpip_iface_get_pbuf_pool_tx(iface) (((struct ndpip_linux_dpdk_iface *) (iface))->iface_pbuf_pool_tx)
 #define ndpip_iface_resolve_arp ndpip_linux_dpdk_iface_resolve_arp

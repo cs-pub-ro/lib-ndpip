@@ -1,8 +1,6 @@
 #ifndef _SRC_INCLUDE_NDPIP_SOCKET_H_
 #define _SRC_INCLUDE_NDPIP_SOCKET_H_
 
-#include <threads.h>
-
 #include <netinet/ether.h>
 #include <netinet/ip.h>
 #include <netinet/tcp.h>
@@ -24,6 +22,7 @@
 #define NDPIP_TODO_MAX_FDS 1024
 #define ndpip_socket_foreach(sock) \
 	for (struct ndpip_socket **(sock) = socket_table; (socket_table != NULL) && ((sock) < (socket_table + NDPIP_TODO_MAX_FDS)); sock++)
+
 
 struct ndpip_socket {
 	struct ndpip_list_head list;
@@ -53,8 +52,9 @@ struct ndpip_socket {
 
 	struct ndpip_timer *socket_timer_rto;
 
-	int64_t grants;
 	int64_t grants_overhead;
+	_Atomic int64_t grants;
+	_Atomic int64_t grants_overcommit;
 
 	uint32_t tcp_seq, tcp_ack, tcp_last_ack, tcp_good_ack;
 
