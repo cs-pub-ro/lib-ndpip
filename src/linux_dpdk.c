@@ -7,7 +7,7 @@
 #include <rte_mbuf.h>
 #include <rte_ethdev.h>
 
-#define NDPIP_TODO_NB_MBUF (1 << 19)
+#define NDPIP_TODO_NB_MBUF (1 << 15)
 #define NDPIP_TODO_MEMPOOL_CACHE_SZ 256
 #define NDPIP_TODO_MBUF_SIZE 3072
 #define NDPIP_TODO_MTU 1500
@@ -54,18 +54,22 @@ int ndpip_linux_dpdk_register_iface(int netdev_id)
 {
 	tsc_hz = rte_get_tsc_hz();
 
-        if ((&iface)->iface_netdev_id >= 0)
+        if ((&iface)->iface_netdev_id >= 0) {
+		perror("iface_netdev_id >= 0");
                 return -1;
+	}
 
 	(&iface)->iface_netdev_id = netdev_id;
 	(&iface)->iface_rx_queue_id = 0;
 	(&iface)->iface_tx_queue_id = 0;
 
 	memset(&(&iface)->iface_conf, 0, sizeof(struct rte_eth_conf));
-        (&iface)->iface_conf.rxmode.max_rx_pkt_len = NDPIP_TODO_MTU;
+        (&iface)->iface_conf.rxmode.mtu = NDPIP_TODO_MTU;
 
-	if (rte_eth_dev_info_get((&iface)->iface_netdev_id, &(&iface)->iface_dev_info) < 0)
+	if (rte_eth_dev_info_get((&iface)->iface_netdev_id, &(&iface)->iface_dev_info) < 0) {
+		perror("rte_eth_dev_info_get");
 		return -1;
+	}
 
 	if ((&iface)->iface_dev_info.tx_offload_capa & DEV_TX_OFFLOAD_IPV4_CKSUM)
         	(&iface)->iface_conf.txmode.offloads |= DEV_TX_OFFLOAD_IPV4_CKSUM;
@@ -79,22 +83,32 @@ int ndpip_linux_dpdk_register_iface(int netdev_id)
 	if ((&iface)->iface_dev_info.rx_offload_capa & DEV_RX_OFFLOAD_TCP_CKSUM)
         	(&iface)->iface_conf.rxmode.offloads |= DEV_RX_OFFLOAD_TCP_CKSUM;
 
-	if (rte_eth_dev_configure((&iface)->iface_netdev_id, 1, 1, &(&iface)->iface_conf) < 0)
+	if (rte_eth_dev_configure((&iface)->iface_netdev_id, 1, 1, &(&iface)->iface_conf) < 0) {
+		perror("rte_eth_dev_configure");
 		return -1;
+	}
 
 	(&iface)->iface_pbuf_pool_rx = (void *) rte_pktmbuf_pool_create("ndpip_pool_rx", NDPIP_TODO_NB_MBUF, NDPIP_TODO_MEMPOOL_CACHE_SZ, NDPIP_DPDK_LINUX_MBUF_PRIVATE, NDPIP_TODO_MBUF_SIZE, rte_socket_id());
-	if ((&iface)->iface_pbuf_pool_rx == NULL)
+	if ((&iface)->iface_pbuf_pool_rx == NULL) {
+		perror("rte_pktmbuf_pool_create");
 		return -1;
+	}
 
 	(&iface)->iface_pbuf_pool_tx = (void *) rte_pktmbuf_pool_create("ndpip_pool_tx", NDPIP_TODO_NB_MBUF, NDPIP_TODO_MEMPOOL_CACHE_SZ, NDPIP_DPDK_LINUX_MBUF_PRIVATE, NDPIP_TODO_MBUF_SIZE, rte_socket_id());
-	if ((&iface)->iface_pbuf_pool_tx == NULL)
+	if ((&iface)->iface_pbuf_pool_tx == NULL) {
+		perror("rte_pktmbuf_pool_create");
 		return -1;
+	}
 
-	if (rte_eth_rx_queue_setup((&iface)->iface_netdev_id, (&iface)->iface_rx_queue_id, 2048, rte_eth_dev_socket_id((&iface)->iface_netdev_id), NULL, (void *) (&iface)->iface_pbuf_pool_rx) < 0)
+	if (rte_eth_rx_queue_setup((&iface)->iface_netdev_id, (&iface)->iface_rx_queue_id, 2048, rte_eth_dev_socket_id((&iface)->iface_netdev_id), NULL, (void *) (&iface)->iface_pbuf_pool_rx) < 0) {
+		perror("rte_eth_rx_queue_setup");
 		return -1;
+	}
 
-	if (rte_eth_tx_queue_setup((&iface)->iface_netdev_id, (&iface)->iface_tx_queue_id, 2048, rte_eth_dev_socket_id((&iface)->iface_netdev_id), NULL) < 0)
+	if (rte_eth_tx_queue_setup((&iface)->iface_netdev_id, (&iface)->iface_tx_queue_id, 2048, rte_eth_dev_socket_id((&iface)->iface_netdev_id), NULL) < 0) {
+		perror("rte_eth_tx_queue_setup");
 		return -1;
+	}
 
 	(&iface)->iface_rx_thread_running = false;
 	(&iface)->iface_timers_thread_running = false;
@@ -427,4 +441,11 @@ void ndpip_linux_dpdk_pbuf_set_l3_len(struct ndpip_pbuf *pb, uint16_t val)
 	struct rte_mbuf *mb = (void *) pb;
 
 	mb->l3_len = val;
+}
+
+uint16_t ndpip_linux_dpdk_iface_get_mtu(struct ndpip_iface *iface)
+{
+	struct ndpip_linux_dpdk_iface *iface_linux_dpdk = (void *) iface;
+
+	return iface_linux_dpdk->iface_conf.rxmode.mtu;
 }

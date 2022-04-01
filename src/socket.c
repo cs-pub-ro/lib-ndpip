@@ -96,6 +96,7 @@ struct ndpip_socket *ndpip_socket_new(int domain, int type, int protocol)
 	sock->socket_iface = NULL;
 	sock->grants = 0;
 	sock->grants_overhead = -1;
+	sock->grants_overcommit = 0;
 
 	sock->state = NEW;
 
@@ -427,6 +428,29 @@ int ndpip_alloc(int sockfd, struct ndpip_pbuf **pb, uint16_t len) {
 	return ndpip_sock_alloc(sock, pb, len, false);
 }
 
+int ndpip_cost(int sockfd, struct ndpip_pbuf **pb, uint16_t len, uint16_t *pb_cost) {
+	if (sockfd < 0) {
+		errno = EBADF;
+		return -1;
+	}
+
+	struct ndpip_socket *sock = ndpip_socket_get(sockfd);
+	if (sock == NULL) {
+		errno = ENOTSOCK;
+		return -1;
+	}
+
+	if (sock->grants_overhead < 0) {
+		errno = EINVAL;
+		return -1;
+	}
+
+	for (uint16_t idx = 0; idx < len; idx++)
+		pb_cost[idx] = sock->grants_overhead + ndpip_pbuf_length(pb[idx]) + sizeof(struct ethhdr) + sizeof(struct iphdr) + sizeof(struct tcphdr);
+
+	return 0;
+}
+
 int ndpip_sock_free(struct ndpip_socket *sock, struct ndpip_pbuf **pb, uint16_t len, bool rx)
 {
 	struct ndpip_pbuf_pool *pool = NULL;
@@ -532,6 +556,64 @@ int ndpip_setsockopt(int sockfd, int level, int optname, const void *optval, soc
 	}
 }
 
+int ndpip_getsockopt(int sockfd, int level, int optname, const void *optval, socklen_t optlen)
+{
+	if (sockfd < 0) {
+		errno = EBADF;
+		return -1;
+	}
+
+	struct ndpip_socket *sock = ndpip_socket_get(sockfd);
+	if (sock == NULL) {
+		errno = ENOTSOCK;
+		return -1;
+	}
+
+	if (level != SOL_SOCKET) {
+		errno = ENOPROTOOPT;
+		return -1;
+	}
+
+	switch (optname) {
+		case SO_NDPIP_TCP_GRANTS:
+			if (optlen != sizeof(size_t)) {
+				errno = EINVAL;
+				return -1;
+			}
+
+			if (sock->state != CONNECTED) {
+				errno = EINVAL;
+				return -1;
+			}
+
+			size_t grants = ndpip_iface_get_burst_size(sock->socket_iface) *
+					ndpip_iface_get_mtu(sock->socket_iface);
+
+			grants = grants < sock->grants ? grants : sock->grants;
+
+			size_t win_size = sock->tcp_max_seq - sock->tcp_seq;
+			grants = grants < win_size ? grants : win_size;
+
+			*((size_t *) optval) = grants;
+
+			return 0;
+
+		case SO_NDPIP_TCP_BURST:
+			if (optlen != sizeof(uint16_t)) {
+				errno = EINVAL;
+				return -1;
+			}
+
+			*((uint16_t *) optval) = ndpip_iface_get_burst_size(sock->socket_iface);
+
+			return 0;
+
+		default:
+			errno = EINVAL;
+			return -1;
+	}
+}
+
 int ndpip_close(int sockfd)
 {
 	if (sockfd < 0) {
@@ -570,3 +652,15 @@ int ndpip_close(int sockfd)
 
 	return 0;
 }
+
+/*
+void ndpip_sock_grants_dec(struct ndpip_socket *sock, uint32_t gen, uint32_t val)
+{
+	struct _Atomic ndpip_socket_grants tmp_grants = sock->grants;
+
+	if (tmp_grants.generation != gen)
+		return;
+
+	sock->grants -= val;
+}
+*/

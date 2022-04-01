@@ -6,6 +6,8 @@
 #define SOCK_NDPIP 42
 
 #define SO_NDPIP_TCP_WIN_SCALE 100
+#define SO_NDPIP_TCP_GRANTS 101
+#define SO_NDPIP_TCP_BURST 102
 
 int ndpip_socket(int domain, int type, int protocol);
 int ndpip_bind(int sockfd, const struct sockaddr *addr, socklen_t addrlen);
@@ -15,9 +17,11 @@ int ndpip_accept(int sockfd, struct sockaddr *addr, socklen_t *addrlen);
 int ndpip_close(int sockfd);
 
 int ndpip_setsockopt(int sockfd, int level, int optname, const void *optval, socklen_t optlen);
+int ndpip_getsockopt(int sockfd, int level, int optname, const void *optval, socklen_t optlen);
 int ndpip_recv(int sockfd, struct ndpip_pbuf **pb, uint16_t count);
 int ndpip_send(int sockfd, struct ndpip_pbuf **pb, uint16_t count);
 int ndpip_free(int sockfd, struct ndpip_pbuf **pb, uint16_t len);
 int ndpip_alloc(int sockfd, struct ndpip_pbuf **pb, uint16_t len);
+int ndpip_cost(int sockfd, struct ndpip_pbuf **pb, uint16_t len, uint16_t *pb_cost);
 
 #endif

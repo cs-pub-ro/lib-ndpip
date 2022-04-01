@@ -1,8 +1,6 @@
 #ifndef _SRC_INCLUDE_NDPIP_SOCKET_H_
 #define _SRC_INCLUDE_NDPIP_SOCKET_H_
 
-#include <threads.h>
-
 #include <netinet/ether.h>
 #include <netinet/ip.h>
 #include <netinet/tcp.h>
@@ -24,6 +22,13 @@
 #define NDPIP_TODO_MAX_FDS 1024
 #define ndpip_socket_foreach(sock) \
 	for (struct ndpip_socket **(sock) = socket_table; (socket_table != NULL) && ((sock) < (socket_table + NDPIP_TODO_MAX_FDS)); sock++)
+
+/*
+struct _Atomic ndpip_socket_grants {
+	uint32_t grants;
+	uint32_t seq;
+};
+*/
 
 struct ndpip_socket {
 	struct ndpip_list_head list;
@@ -53,8 +58,10 @@ struct ndpip_socket {
 
 	struct ndpip_timer *socket_timer_rto;
 
-	int64_t grants;
-	int64_t grants_overhead;
+	//struct _Atomic ndpip_socket_grants grants;
+	_Atomic int64_t grants;
+	_Atomic int64_t grants_overhead;
+	_Atomic int64_t grants_overcommit;
 
 	uint32_t tcp_seq, tcp_ack, tcp_last_ack, tcp_good_ack;
 
@@ -77,6 +84,7 @@ struct ndpip_socket *ndpip_socket_accept(struct ndpip_socket *sock);
 struct ndpip_socket *ndpip_socket_get_by_peer(struct sockaddr_in *local, struct sockaddr_in *peer);
 int ndpip_sock_free(struct ndpip_socket *sock, struct ndpip_pbuf **pb, uint16_t len, bool rx);
 int ndpip_sock_alloc(struct ndpip_socket *sock, struct ndpip_pbuf **pb, uint16_t len, bool rx);
+//void ndpip_sock_grants_dec(struct ndpip_socket *sock, uint32_t val);
 
 extern struct ndpip_hashtable *ndpip_established_sockets;
 extern struct ndpip_hashtable *ndpip_listening_sockets;
