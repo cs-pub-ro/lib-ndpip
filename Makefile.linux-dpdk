@@ -33,7 +33,7 @@ all: $(LIB)
 	$(CC) -c $(CFLAGS) -o $@ $<
 
 $(LIB): $(OBJS-y)
-	$(AR) rcs $@ $(OBJS-y)
+	$(AR) -rcs $@ $(OBJS-y)
 
 clean:
 	rm -f $(OBJS-y) $(LIB)

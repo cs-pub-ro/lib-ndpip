@@ -269,23 +269,6 @@ uint16_t ndpip_tcp_max_xmit(struct ndpip_socket *sock, struct ndpip_pbuf **pb, u
 
 int ndpip_tcp_send_data(struct ndpip_socket *sock, struct ndpip_pbuf **pb, uint16_t cnt)
 {
-	{
-		static int64_t grants_acc_before = 0;
-		static int64_t grants_acc_iter = 0;
-		static int64_t grants_acc = 0;
-
-		grants_acc += sock->grants;
-		grants_acc_iter++;
-
-		if ((rdtsc() - grants_acc_before) > 1000000000UL) {
-			printf("grants=%ld;\n", grants_acc / grants_acc_iter);
-
-			grants_acc = 0;
-			grants_acc_iter = 0;
-			grants_acc_before = rdtsc();
-		}
-	}
-
 	cnt = ndpip_tcp_max_xmit(sock, pb, cnt);
 
 	if (cnt == 0)

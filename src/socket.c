@@ -41,11 +41,9 @@ static int ndpip_socket_grants_get(struct ndpip_socket *sock) {
 	struct eqds_cn *cn = ((void *) eth) + sizeof(struct ether_header);
 	cn->destination = sock->remote.sin_addr.s_addr;
 	cn->operation = CN_GRANTS_GET;
+	cn->tsc = ndpip_tsc();
 
 	ndpip_iface_xmit(sock->socket_iface, &pb, 1, true);
-
-	while (sock->grants_overhead < 0)
-		ndpip_usleep(1);
 
 	return 0;
 }
@@ -66,7 +64,7 @@ struct ndpip_socket *ndpip_socket_get_by_peer(struct sockaddr_in *local, struct 
 	return ndpip_hashtable_get(ndpip_listening_sockets, local, sizeof(struct sockaddr_in));
 }
 
-static struct ndpip_socket *ndpip_socket_get(int sockfd)
+struct ndpip_socket *ndpip_socket_get(int sockfd)
 {
 	if (socket_table == NULL)
 		return NULL;
@@ -75,6 +73,25 @@ static struct ndpip_socket *ndpip_socket_get(int sockfd)
 		return socket_table[sockfd];
 
 	return NULL;
+}
+
+int ndpip_grants_get(int sockfd)
+{
+	struct ndpip_socket *sock = ndpip_socket_get(sockfd);
+	if (sock == NULL) {
+		errno = EBADFD;
+		return -1;
+	}
+
+	if (ndpip_socket_grants_get(sock) < 0)
+		return -1;
+
+	while (sock->grants_overhead < 0)
+		ndpip_usleep(1);
+
+	sock->grants_overhead = -1;
+
+	return 0;
 }
 
 struct ndpip_socket *ndpip_socket_new(int domain, int type, int protocol)
@@ -259,6 +276,9 @@ int ndpip_connect(int sockfd, const struct sockaddr *addr, socklen_t addrlen)
 		errno = EFAULT;
 		return -1;
 	}
+
+	while (sock->grants_overhead < 0)
+		ndpip_usleep(1);
 
 	sock->state = CONNECTING;
 
@@ -512,6 +532,9 @@ struct ndpip_socket *ndpip_socket_accept(struct ndpip_socket *sock)
 
 	if (ndpip_socket_grants_get(asock) < 0)
 		return NULL;
+
+	while (sock->grants_overhead < 0)
+		ndpip_usleep(1);
 
 	return asock;
 }

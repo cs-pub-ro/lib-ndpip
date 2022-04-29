@@ -77,6 +77,24 @@ int ndpip_rx_thread(void *argp)
 				int32_t cn_value1 = ntohl(cn->value1);
 				int32_t cn_value2 = ntohl(cn->value2);
 
+				if (cn->operation == CN_GRANTS_SET) {
+					static uint64_t tsc_acc = 0;
+					static uint64_t tsc_idx = 0;
+
+					tsc_acc += (ndpip_tsc() - cn->tsc);
+					tsc_idx++;
+
+					if (tsc_idx > 10000ULL) {
+						struct timespec ts;
+
+						ndpip_tsc2time(tsc_acc / tsc_idx, &ts);
+						printf("CN-RTT: sec=%lu; nsec=%lu;\n", ts.tv_sec, ts.tv_nsec);
+
+						tsc_idx = 0;
+						tsc_acc = 0;
+					}
+				}
+
 				ndpip_socket_foreach(sock) {
 					if ((*sock) == NULL)
 						continue;

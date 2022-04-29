@@ -69,6 +69,7 @@ struct eqds_cn {
 	uint8_t operation;
 	uint32_t value1;
 	uint32_t value2;
+	uint64_t tsc;
 } __attribute__((packed));
 
 struct ndpip_ring *ndpip_ring_alloc(size_t length, size_t esize);
