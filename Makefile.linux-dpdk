@@ -5,6 +5,7 @@ CC = gcc
 PKGCONF = pkg-config
 
 SRCS-y += src/tcp.c
+SRCS-y += src/udp.c
 SRCS-y += src/socket.c
 SRCS-y += src/util.c
 SRCS-y += src/workhorse.c
@@ -19,6 +20,7 @@ CFLAGS += -O3
 CFLAGS += -Wall
 CFLAGS += -Wno-address-of-packed-member
 CFLAGS += -g
+CFLAGS += -std=gnu17
 #CFLAGS += -flto
 CFLAGS += -DNDPIP_LINUX_DPDK
 CFLAGS += -Isrc/include

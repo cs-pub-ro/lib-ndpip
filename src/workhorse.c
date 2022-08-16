@@ -1,6 +1,7 @@
 #include "ndpip/util.h"
 #include "ndpip/socket.h"
 #include "ndpip/tcp.h"
+#include "ndpip/udp.h"
 #include "ndpip/workhorse.h"
 
 #ifdef NDPIP_UK
@@ -19,6 +20,7 @@
 
 #include <netinet/ether.h>
 #include <netinet/ip.h>
+#include <netinet/udp.h>
 #include <netinet/tcp.h>
 
 #include <dnet/ip.h>
@@ -48,7 +50,7 @@ int ndpip_rx_thread(void *argp)
 		if ((r < 0) || (pkt_cnt == 0))
 			continue;
 
-		struct ndpip_socket *reply_sockets[pkt_cnt];
+		struct ndpip_tcp_socket *reply_sockets[pkt_cnt];
 		uint16_t reply_sockets_len = 0;
 
 		uint16_t replies_len = 0;
@@ -73,7 +75,7 @@ int ndpip_rx_thread(void *argp)
 
 			if (ntohs(eth->h_proto) == ETH_P_EQDSCN) {
 				struct eqds_cn *cn = ((void *) eth) + sizeof(struct ethhdr);
-				struct in_addr cn_destination = { .s_addr = cn->destination };
+				//struct in_addr cn_destination = { .s_addr = cn->destination };
 				int32_t cn_value1 = ntohl(cn->value1);
 				int32_t cn_value2 = ntohl(cn->value2);
 
@@ -105,13 +107,15 @@ int ndpip_rx_thread(void *argp)
 			if (ntohs(eth->h_proto) != ETH_P_IP)
 				goto free_pkt;
 
-			if (ndpip_pbuf_length(pb) < (sizeof(struct ethhdr) + sizeof(struct iphdr) + sizeof(struct tcphdr)))
+			ndpip_pbuf_offset(pb, -(int) sizeof(struct ethhdr));
+
+			if (ndpip_pbuf_length(pb) < sizeof(struct iphdr))
 				goto free_pkt;
 
-			struct iphdr *iph = ((void *) eth) + sizeof(struct ethhdr);
+			struct iphdr *iph = ndpip_pbuf_data(pb);
 
 			if (!ndpip_iface_has_offload(iface, NDPIP_IFACE_OFFLOAD_RX_IPV4_CSUM)) {
-				if (ipv4_checksum(iph) != 0)
+				if (iphv4_checksum(iph) != 0)
 					goto free_pkt;
 			}
 
@@ -121,48 +125,81 @@ int ndpip_rx_thread(void *argp)
 			if (iph->daddr != ndpip_iface_get_inaddr(iface)->s_addr)
 				goto free_pkt;
 
-			if (iph->protocol != IPPROTO_TCP)
-				goto free_pkt;
+			uint8_t protocol = iph->protocol;
 
-			struct tcphdr *th = ((void *) iph) + sizeof(struct iphdr);
-
-			if (!ndpip_iface_has_offload(iface, NDPIP_IFACE_OFFLOAD_RX_TCPV4_CSUM)) {
-				if (tcpv4_checksum(iph) != 0)
-					goto free_pkt;
-			} else {
-				if (ndpip_pbuf_has_flag(pb, NDPIP_PBUF_F_RX_L4_CSUM_BAD))
-					goto free_pkt;
-			}
-
-			struct sockaddr_in local = {
-				.sin_family = AF_INET,
-				.sin_addr.s_addr = iph->daddr,
-				.sin_port = ntohs(th->th_dport)
-			};
-
-			struct sockaddr_in remote = {
-				.sin_family = AF_INET,
-				.sin_addr.s_addr = iph->saddr,
-				.sin_port = ntohs(th->th_sport)
-			};
-
-			struct ndpip_socket *sock = ndpip_socket_get_by_peer(&local, &remote);
-			if (sock == NULL)
-				goto free_pkt;
-
-			if (!sock->rx_loop_seen) {
-				reply_sockets[reply_sockets_len++] = sock;
-				sock->rx_loop_seen = true;
-			}
-
-			ndpip_pbuf_offset(pb, -(int) (sizeof(struct ethhdr) + sizeof(struct iphdr)));
+			ndpip_pbuf_offset(pb, -(int) sizeof(struct iphdr));
 			ndpip_pbuf_resize(pb, ntohs(iph->tot_len) - (iph->ihl << 2));
-			int r = ndpip_tcp_feed(sock, &remote, pb, replies[replies_len]);
-			if (r == 1)
-				replies_len++;
 
-			if (r == 2)
-				continue;
+			if (protocol == IPPROTO_TCP) {
+				struct tcphdr *th = ndpip_pbuf_data(pb);
+
+				if (!ndpip_iface_has_offload(iface, NDPIP_IFACE_OFFLOAD_RX_TCPV4_CSUM)) {
+					if (ipv4_checksum(iph) != 0)
+						goto free_pkt;
+				} else {
+					if (ndpip_pbuf_has_flag(pb, NDPIP_PBUF_F_RX_L4_CSUM_BAD))
+						goto free_pkt;
+				}
+
+				struct sockaddr_in local = {
+					.sin_family = AF_INET,
+					.sin_addr.s_addr = iph->daddr,
+					.sin_port = ntohs(th->th_dport)
+				};
+
+				struct sockaddr_in remote = {
+					.sin_family = AF_INET,
+					.sin_addr.s_addr = iph->saddr,
+					.sin_port = ntohs(th->th_sport)
+				};
+
+				struct ndpip_tcp_socket *tcp_sock = (struct ndpip_tcp_socket *) ndpip_socket_get_by_peer(&local, &remote, IPPROTO_TCP);
+				if (tcp_sock == NULL)
+					goto free_pkt;
+
+				if (!tcp_sock->rx_loop_seen) {
+					reply_sockets[reply_sockets_len++] = tcp_sock;
+					tcp_sock->rx_loop_seen = true;
+				}
+
+				int r = ndpip_tcp_feed(tcp_sock, &remote, pb, replies[replies_len]);
+				if (r == 1)
+					replies_len++;
+
+				if (r == 2)
+					continue;
+			}
+
+			if (protocol == IPPROTO_UDP) {
+				struct udphdr *uh = ndpip_pbuf_data(pb);
+
+				if (!ndpip_iface_has_offload(iface, NDPIP_IFACE_OFFLOAD_RX_UDPV4_CSUM)) {
+					if (ipv4_checksum(iph) != 0)
+						goto free_pkt;
+				} else {
+					if (ndpip_pbuf_has_flag(pb, NDPIP_PBUF_F_RX_L4_CSUM_BAD))
+						goto free_pkt;
+				}
+
+				struct sockaddr_in local = {
+					.sin_family = AF_INET,
+					.sin_addr.s_addr = iph->daddr,
+					.sin_port = ntohs(uh->uh_dport)
+				};
+
+				struct sockaddr_in remote = {
+					.sin_family = AF_INET,
+					.sin_addr.s_addr = iph->saddr,
+					.sin_port = ntohs(uh->uh_sport)
+				};
+
+				struct ndpip_udp_socket *udp_sock = (struct ndpip_udp_socket *) ndpip_socket_get_by_peer(&local, &remote, IPPROTO_UDP);
+				if (udp_sock == NULL)
+					goto free_pkt;
+
+				if (ndpip_udp_feed(udp_sock, &remote, pb) == 2)
+					continue;
+			}
 
 free_pkt:
 			freed_pkts[freed_pkt_cnt++] = pb;
@@ -171,10 +208,11 @@ free_pkt:
 		ndpip_pbuf_pool_release(ndpip_iface_get_pbuf_pool_rx(iface), freed_pkts, freed_pkt_cnt);
 
 		for (uint16_t idx = 0; idx < reply_sockets_len; idx++) {
-			struct ndpip_socket *reply_socket = reply_sockets[idx];
+			struct ndpip_tcp_socket *reply_tcp_socket = reply_sockets[idx];
+			struct ndpip_socket *reply_socket = &reply_tcp_socket->socket;
 			struct ndpip_pbuf *reply = replies[replies_len];
 
-			int r = ndpip_tcp_feed(reply_socket, NULL, NULL, reply);
+			int r = ndpip_tcp_feed(reply_tcp_socket, NULL, NULL, reply);
 			if (r == 1) {
 				reply_socket->grants -= ndpip_pbuf_length(reply) + reply_socket->grants_overhead;
 				replies_len++;
@@ -189,7 +227,7 @@ free_pkt:
 				*/
 			}
 
-			reply_socket->rx_loop_seen = false;
+			reply_tcp_socket->rx_loop_seen = false;
 		}
 
 		if (replies_len > 0)

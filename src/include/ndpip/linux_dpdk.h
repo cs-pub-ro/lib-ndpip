@@ -39,8 +39,10 @@ struct ndpip_linux_dpdk_iface {
 enum ndpip_iface_offload {
 	NDPIP_IFACE_OFFLOAD_TX_IPV4_CSUM,
 	NDPIP_IFACE_OFFLOAD_TX_TCPV4_CSUM,
+	NDPIP_IFACE_OFFLOAD_TX_UDPV4_CSUM,
 	NDPIP_IFACE_OFFLOAD_RX_IPV4_CSUM,
-	NDPIP_IFACE_OFFLOAD_RX_TCPV4_CSUM
+	NDPIP_IFACE_OFFLOAD_RX_TCPV4_CSUM,
+	NDPIP_IFACE_OFFLOAD_RX_UDPV4_CSUM
 };
 
 struct ndpip_pbuf_pool *ndpip_linux_dpdk_pbuf_pool_alloc(size_t pbuf_count, uint16_t pbuf_size, size_t pbuf_allign, uint16_t pbuf_headroom);

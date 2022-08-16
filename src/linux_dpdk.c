@@ -146,11 +146,6 @@ int ndpip_linux_dpdk_iface_xmit(struct ndpip_iface *iface, struct ndpip_pbuf **p
 
 	uint16_t max_burst = ndpip_iface_get_burst_size(iface);
 
-	rte_eth_tx_prepare(
-		iface_linux_dpdk->iface_netdev_id,
-		iface_linux_dpdk->iface_tx_queue_id,
-		mb, cnt);
-
 	for (uint16_t idx = 0; idx < cnt;) {
 		uint16_t cnt2 = cnt - idx;
 		cnt2 = max_burst < cnt2 ? max_burst : cnt2;
@@ -370,11 +365,17 @@ bool ndpip_linux_dpdk_iface_has_offload(struct ndpip_iface *iface, enum ndpip_if
 		case NDPIP_IFACE_OFFLOAD_TX_TCPV4_CSUM:
 			return iface_linux_dpdk->iface_conf.txmode.offloads & DEV_TX_OFFLOAD_TCP_CKSUM;
 
+		case NDPIP_IFACE_OFFLOAD_TX_UDPV4_CSUM:
+			return iface_linux_dpdk->iface_conf.txmode.offloads & DEV_TX_OFFLOAD_UDP_CKSUM;
+
 		case NDPIP_IFACE_OFFLOAD_RX_IPV4_CSUM:
 			return iface_linux_dpdk->iface_conf.rxmode.offloads & DEV_RX_OFFLOAD_IPV4_CKSUM;
 
 		case NDPIP_IFACE_OFFLOAD_RX_TCPV4_CSUM:
 			return iface_linux_dpdk->iface_conf.rxmode.offloads & DEV_RX_OFFLOAD_TCP_CKSUM;
+
+		case NDPIP_IFACE_OFFLOAD_RX_UDPV4_CSUM:
+			return iface_linux_dpdk->iface_conf.rxmode.offloads & DEV_RX_OFFLOAD_UDP_CKSUM;
 
 		default:
 			return false;

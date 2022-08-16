@@ -8,9 +8,14 @@
 
 #include <dnet/ip.h>
 
-#include <netinet/tcp.h>
 
-uint16_t ipv4_checksum(struct iphdr *iph)
+#define ip_cksum_carry(x) \
+	(x = (x >> 16) + (x & 0xffff), (~(x + (x >> 16)) & 0xffff))
+
+
+int32_t ip_cksum_add(const void *buf, uint16_t len, int32_t cksum);
+
+uint16_t iphv4_checksum(struct iphdr *iph)
 {
 	int32_t sum;
 
@@ -23,34 +28,40 @@ uint16_t ipv4_checksum(struct iphdr *iph)
 
 uint16_t ipv4_checksum_pheader(struct iphdr *iph, uint16_t len)
 {
-	int32_t sum = iph->saddr >> 16;
-	sum += iph->saddr & 0xffff;
+	int32_t sum = 0;
 
+	sum += iph->saddr >> 16;
+	sum += iph->saddr & 0xffff;
 	sum += iph->daddr >> 16;
 	sum += iph->daddr & 0xffff;
+	sum += htons(iph->protocol + len);
 
-	sum += iph->protocol << 8;
-	sum += htons(len);
+	sum = ip_cksum_carry(sum);
 
-	return ip_cksum_carry(sum);
+	return htons(sum);
 }
 
-uint16_t tcp_checksum_partial(struct tcphdr *th, uint16_t len, uint16_t sum)
+uint16_t inet_checksum_partial(void *payload, uint16_t len, int32_t sum)
 {
-	sum = ip_cksum_add(th, len, sum);
-
-	return ip_cksum_carry(sum);
+	sum = ip_cksum_add(payload, len, sum);
+ 	return ip_cksum_carry(sum);
 }
 
-uint16_t tcpv4_checksum(struct iphdr *iph)
+uint16_t ipv4_checksum(struct iphdr *iph)
 {
 	uint16_t hl = iph->ihl << 2;
 	uint16_t len = ntohs(iph->tot_len) - hl;
-	struct tcphdr *th = ((void *) iph) + hl;
+	void *payload = ((void *) iph) + hl;
 
-	uint16_t sum = ipv4_checksum_pheader(iph, len);
+	int32_t sum = 0;
+
+	sum += iph->saddr >> 16;
+	sum += iph->saddr & 0xffff;
+	sum += iph->daddr >> 16;
+	sum += iph->daddr & 0xffff;
+	sum += htons(iph->protocol + len);
 		
-	return tcp_checksum_partial(th, len, sum);
+	return inet_checksum_partial(payload, len, sum);
 }
 
 int32_t ip_cksum_add(const void *buf, uint16_t len, int32_t cksum)
@@ -99,7 +110,7 @@ int32_t ip_cksum_add(const void *buf, uint16_t len, int32_t cksum)
 	}
 
 	if (len & 1)
-		cksum += *((uint8_t *) sp);
+		cksum += htons(*((uint8_t *) sp) << 8);
 
 	return cksum;
 }

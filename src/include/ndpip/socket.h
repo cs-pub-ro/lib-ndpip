@@ -3,7 +3,6 @@
 
 #include <netinet/ether.h>
 #include <netinet/ip.h>
-#include <netinet/tcp.h>
 
 #include <sys/socket.h>
 
@@ -24,62 +23,44 @@
 	for (struct ndpip_socket **(sock) = socket_table; (socket_table != NULL) && ((sock) < (socket_table + NDPIP_TODO_MAX_FDS)); sock++)
 
 
+extern struct ndpip_hashtable *ndpip_established_sockets;
+extern struct ndpip_hashtable *ndpip_listening_sockets;
+
+struct ndpip_established_key {
+	struct sockaddr_in local;
+	struct sockaddr_in remote;
+	int protocol;
+};
+
+struct ndpip_listening_key {
+	struct sockaddr_in local;
+	int protocol;
+};
+
 struct ndpip_socket {
 	struct ndpip_list_head list;
-	struct ndpip_list_head accept_queue;
 
 	int socket_id;
-	struct ndpip_iface *socket_iface;
-
-	enum {
-		NEW,
-		BOUND,
-		ACCEPTING,
-		CONNECTING,
-		CONNECTED,
-		LISTENING,
-		CLOSING,
-		CLOSED
-	} state;
+	int protocol;
+	struct ndpip_iface *iface;
 
 	struct sockaddr_in local;
 	struct sockaddr_in remote;
 
-	uint8_t xmit_template[sizeof(struct ethhdr) + sizeof(struct iphdr) + sizeof(struct tcphdr)];
-
 	struct ndpip_ring *xmit_ring;
 	struct ndpip_ring *recv_ring;
-
-	struct ndpip_timer *socket_timer_rto;
 
 	int64_t grants_overhead;
 	_Atomic int64_t grants;
 	_Atomic int64_t grants_overcommit;
-
-	uint32_t tcp_seq, tcp_ack, tcp_last_ack, tcp_good_ack;
-
-	uint32_t tcp_recv_win;
-	uint32_t tcp_max_seq;
-
-	uint8_t tcp_recv_win_scale;
-	uint8_t tcp_send_win_scale;
-
-	bool tcp_recovery;
-	bool tcp_retransmission;
-	bool tcp_rto;
-
-	bool tcp_rsp_ack;
-	bool rx_loop_seen;
 };
 
 struct ndpip_socket *ndpip_socket_new(int domain, int type, int protocol);
 struct ndpip_socket *ndpip_socket_accept(struct ndpip_socket *sock);
-struct ndpip_socket *ndpip_socket_get_by_peer(struct sockaddr_in *local, struct sockaddr_in *peer);
 int ndpip_sock_free(struct ndpip_socket *sock, struct ndpip_pbuf **pb, uint16_t len, bool rx);
 int ndpip_sock_alloc(struct ndpip_socket *sock, struct ndpip_pbuf **pb, uint16_t len, bool rx);
+struct ndpip_socket *ndpip_socket_get_by_peer(struct sockaddr_in *local, struct sockaddr_in *remote, int protocol);
 
-extern struct ndpip_hashtable *ndpip_established_sockets;
-extern struct ndpip_hashtable *ndpip_listening_sockets;
 extern struct ndpip_socket **socket_table;
 
 #endif

@@ -1,0 +1,24 @@
+#ifndef _SRC_INCLUDE_NDPIP_UDP_H_
+#define _SRC_INCLUDE_NDPIP_UDP_H_
+
+#include <time.h>
+
+#include <netinet/in.h>
+#include <netinet/udp.h>
+
+#include "ndpip/pbuf.h"
+#include "ndpip/socket.h"
+
+struct ndpip_udp_socket {
+    struct ndpip_socket socket;
+
+	uint8_t xmit_template[sizeof(struct ethhdr) + sizeof(struct iphdr) + sizeof(struct udphdr)];
+};
+
+int ndpip_udp_build_xmit_template(struct ndpip_udp_socket *sock);
+int ndpip_udp_feed(struct ndpip_udp_socket *sock, struct sockaddr_in *remote, struct ndpip_pbuf *pb);
+int ndpip_udp_send_data(struct ndpip_udp_socket *sock, struct ndpip_pbuf **pb, uint16_t cnt);
+int ndpip_udp_close(struct ndpip_udp_socket *sock);
+int ndpip_udp_connect(struct ndpip_udp_socket *udp_sock);
+
+#endif

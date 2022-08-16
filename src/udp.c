@@ -1,0 +1,185 @@
+#include <time.h>
+
+#include "ndpip/util.h"
+#include "ndpip/udp.h"
+
+#include <assert.h>
+#include <string.h>
+
+#include <netinet/ip.h>
+#include <netinet/udp.h>
+
+#include <dnet/ip.h>
+
+
+static void ndpip_udp_prepare_pbuf(struct ndpip_udp_socket *tcp_sock, struct ndpip_pbuf *pb, struct iphdr *iph, struct udphdr *uh);
+
+int ndpip_udp_close(struct ndpip_udp_socket *udp_sock)
+{
+	struct ndpip_socket *sock = &udp_sock->socket;
+
+    struct ndpip_established_key key = {
+		.local = sock->local,
+		.remote = sock->remote,
+		.protocol = IPPROTO_UDP
+	};
+
+	ndpip_hashtable_del(ndpip_established_sockets, &key, sizeof(key));
+    
+    return 0;
+}
+
+int ndpip_udp_build_xmit_template(struct ndpip_udp_socket *udp_sock) {
+	struct ndpip_socket *sock = &udp_sock->socket;
+
+	struct ethhdr *eth = (void *) udp_sock->xmit_template;
+
+	struct ether_addr *eth_src = ndpip_iface_get_ethaddr(sock->iface);
+	struct ether_addr *eth_dst = ndpip_iface_resolve_arp(sock->iface, sock->remote.sin_addr);
+
+	if ((eth_dst == NULL) || (eth_src == NULL))
+		return -1;
+
+	memcpy(eth->h_dest, eth_dst, ETH_ALEN);
+	memcpy(eth->h_source, eth_src, ETH_ALEN);
+
+	eth->h_proto = htons(ETH_P_IP);
+
+	struct iphdr *iph = ((void *) eth) + sizeof(struct ethhdr);
+	*iph = (struct iphdr) {
+		.version = 4,
+		.ihl = 5,
+		.tos = 0,
+		.tot_len = 0,
+		.id = 0,
+		.frag_off = 0,
+		.ttl = 32,
+		.protocol = IPPROTO_UDP,
+		.check = 0,
+		.saddr = sock->local.sin_addr.s_addr,
+		.daddr = sock->remote.sin_addr.s_addr
+	};
+
+	struct udphdr *uh = ((void *) iph) + sizeof(struct iphdr);
+	*uh = (struct udphdr) {
+		.uh_sport = htons(sock->local.sin_port),
+		.uh_dport = htons(sock->remote.sin_port)
+	};
+
+	return 0;
+}
+
+int ndpip_udp_connect(struct ndpip_udp_socket *udp_sock)
+{
+	if (ndpip_udp_build_xmit_template(udp_sock) < 0) {
+		errno = EFAULT;
+		return -1;
+	}
+
+    struct ndpip_socket *sock = &udp_sock->socket;
+	struct ndpip_listening_key key = { .local = sock->local, .protocol = IPPROTO_UDP };
+	ndpip_hashtable_del(ndpip_listening_sockets, &key, sizeof(key));
+
+	struct ndpip_established_key key2 = { .local = sock->local, .remote = sock->remote, .protocol = IPPROTO_UDP };
+	ndpip_hashtable_put(ndpip_established_sockets, &key2, sizeof(key2), udp_sock);
+
+	return 0;
+}
+
+int ndpip_udp_feed(struct ndpip_udp_socket *udp_sock, struct sockaddr_in *remote, struct ndpip_pbuf *pb)
+{
+	struct ndpip_socket *sock = &udp_sock->socket;
+	
+    if (ndpip_pbuf_length(pb) <= sizeof(struct udphdr))
+        return 0;
+
+    ndpip_pbuf_offset(pb, -(int)sizeof(struct udphdr));
+	ndpip_ring_push(sock->recv_ring, &pb, 1);
+    
+    return 2;
+}
+
+uint16_t ndpip_udp_max_xmit(struct ndpip_udp_socket *udp_sock, struct ndpip_pbuf **pb, uint16_t cnt)
+{
+	struct ndpip_socket *sock = &udp_sock->socket;
+	
+	if (cnt == 0)
+		return 0;
+
+	if (sock->grants_overhead < 0)
+		return 0;
+
+	uint16_t burst_size = ndpip_iface_get_burst_size(sock->iface);
+	cnt = cnt < burst_size ? cnt : burst_size;
+	int64_t grants_left = sock->grants;
+
+	for (uint16_t idx = 0; idx < cnt; idx++) {
+		grants_left -= sock->grants_overhead + sizeof(struct iphdr) + sizeof(struct udphdr) + ndpip_pbuf_length(pb[idx]);
+
+		if (grants_left < 0)
+			return idx;
+	}
+
+	return cnt;
+}
+
+int ndpip_udp_send_data(struct ndpip_udp_socket *udp_sock, struct ndpip_pbuf **pb, uint16_t cnt)
+{
+	struct ndpip_socket *sock = &udp_sock->socket;
+
+	cnt = ndpip_udp_max_xmit(udp_sock, pb, cnt);
+	if (cnt == 0)
+		return 0;
+
+	uint64_t tsc_now = ndpip_tsc();
+
+	for (uint16_t idx = 0; idx < cnt; idx++) {
+		uint16_t data_len = ndpip_pbuf_length(pb[idx]);
+
+		ndpip_pbuf_offset(pb[idx], sizeof(udp_sock->xmit_template));
+		memcpy(ndpip_pbuf_data(pb[idx]), udp_sock->xmit_template, sizeof(udp_sock->xmit_template));
+
+		struct iphdr *iph = ndpip_pbuf_data(pb[idx]) + sizeof(struct ethhdr);
+		struct udphdr *uh = (void *) (iph + 1);
+
+		uint16_t tot_len = sizeof(struct iphdr) + sizeof(struct udphdr) + data_len;
+		iph->tot_len = htons(tot_len);
+		uh->uh_ulen = htons(sizeof(struct udphdr) + data_len);
+
+		sock->grants -= sock->grants_overhead + tot_len;
+
+		ndpip_udp_prepare_pbuf(udp_sock, pb[idx], iph, uh);
+
+		struct ndpip_pbuf_meta *pm = ndpip_pbuf_metadata(pb[idx]);
+		pm->xmit_tsc = tsc_now;
+	}
+
+	ndpip_iface_xmit(sock->iface, pb, cnt, true);
+
+	//printf("UDP-send: xmit_ring_size=%lu;\n", ndpip_ring_size(sock->xmit_ring));
+
+	return cnt;
+}
+
+static void ndpip_udp_prepare_pbuf(struct ndpip_udp_socket *udp_sock, struct ndpip_pbuf *pb, struct iphdr *iph, struct udphdr *uh)
+{
+	struct ndpip_socket *sock = &udp_sock->socket;
+
+	ndpip_pbuf_set_l2_len(pb, sizeof(struct ethhdr));
+	ndpip_pbuf_set_l3_len(pb, sizeof(struct iphdr));
+
+	ndpip_pbuf_set_flag(pb, NDPIP_PBUF_F_TX_IPV4, true);
+
+	if (ndpip_iface_has_offload(sock->iface, NDPIP_IFACE_OFFLOAD_TX_IPV4_CSUM))
+		ndpip_pbuf_set_flag(pb, NDPIP_PBUF_F_TX_IP_CKSUM, true);
+	else
+		iph->check = iphv4_checksum(iph);
+
+	if (ndpip_iface_has_offload(sock->iface, NDPIP_IFACE_OFFLOAD_TX_UDPV4_CSUM)) {
+		uh->uh_sum = ipv4_checksum_pheader(iph, iph->ihl << 2);
+		ndpip_pbuf_set_flag(pb, NDPIP_PBUF_F_TX_UDP_CKSUM, true);
+	} else {
+		uh->uh_sum = 0;
+		uh->uh_sum = ipv4_checksum(iph);
+	}
+}
