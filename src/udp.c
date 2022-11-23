@@ -9,8 +9,6 @@
 #include <netinet/ip.h>
 #include <netinet/udp.h>
 
-#include <dnet/ip.h>
-
 
 static void ndpip_udp_prepare_pbuf(struct ndpip_udp_socket *tcp_sock, struct ndpip_pbuf *pb, struct iphdr *iph, struct udphdr *uh);
 
@@ -18,10 +16,12 @@ int ndpip_udp_close(struct ndpip_udp_socket *udp_sock)
 {
 	struct ndpip_socket *sock = &udp_sock->socket;
 
-    struct ndpip_established_key key = {
-		.local = sock->local,
-		.remote = sock->remote,
-		.protocol = IPPROTO_UDP
+	struct ndpip_established_key key = {
+		.saddr = sock->remote.sin_addr.s_addr,
+		.daddr = sock->local.sin_addr.s_addr,
+		.sport = sock->remote.sin_port,
+		.dport = sock->local.sin_port,
+		.proto = IPPROTO_UDP
 	};
 
 	ndpip_hashtable_del(ndpip_established_sockets, &key, sizeof(key));
@@ -76,11 +76,24 @@ int ndpip_udp_connect(struct ndpip_udp_socket *udp_sock)
 		return -1;
 	}
 
-    struct ndpip_socket *sock = &udp_sock->socket;
-	struct ndpip_listening_key key = { .local = sock->local, .protocol = IPPROTO_UDP };
+	struct ndpip_socket *sock = &udp_sock->socket;
+
+	struct ndpip_listening_key key = {
+		.daddr = sock->local.sin_addr.s_addr,
+		.dport = sock->local.sin_port,
+		.proto = IPPROTO_UDP
+	};
+
 	ndpip_hashtable_del(ndpip_listening_sockets, &key, sizeof(key));
 
-	struct ndpip_established_key key2 = { .local = sock->local, .remote = sock->remote, .protocol = IPPROTO_UDP };
+	struct ndpip_established_key key2 = {
+		.saddr = sock->remote.sin_addr.s_addr,
+		.daddr = sock->local.sin_addr.s_addr,
+		.sport = sock->remote.sin_port,
+		.dport = sock->local.sin_port,
+		.proto = IPPROTO_UDP
+	};
+
 	ndpip_hashtable_put(ndpip_established_sockets, &key2, sizeof(key2), udp_sock);
 
 	return 0;
@@ -89,14 +102,14 @@ int ndpip_udp_connect(struct ndpip_udp_socket *udp_sock)
 int ndpip_udp_feed(struct ndpip_udp_socket *udp_sock, struct sockaddr_in *remote, struct ndpip_pbuf *pb)
 {
 	struct ndpip_socket *sock = &udp_sock->socket;
-	
-    if (ndpip_pbuf_length(pb) <= sizeof(struct udphdr))
-        return 0;
 
-    ndpip_pbuf_offset(pb, -(int)sizeof(struct udphdr));
+	if (ndpip_pbuf_length(pb) <= sizeof(struct udphdr))
+		return 0;
+
+	ndpip_pbuf_offset(pb, -(int)sizeof(struct udphdr));
 	ndpip_ring_push(sock->recv_ring, &pb, 1);
     
-    return 2;
+	return 2;
 }
 
 uint16_t ndpip_udp_max_xmit(struct ndpip_udp_socket *udp_sock, struct ndpip_pbuf **pb, uint16_t cnt)
@@ -114,10 +127,12 @@ uint16_t ndpip_udp_max_xmit(struct ndpip_udp_socket *udp_sock, struct ndpip_pbuf
 	int64_t grants_left = sock->grants;
 
 	for (uint16_t idx = 0; idx < cnt; idx++) {
-		grants_left -= sock->grants_overhead + sizeof(struct iphdr) + sizeof(struct udphdr) + ndpip_pbuf_length(pb[idx]);
+		grants_left -= sock->grants_overhead + sizeof(struct ethhdr) + sizeof(struct iphdr) + sizeof(struct udphdr) + ndpip_pbuf_length(pb[idx]);
 
+		/*
 		if (grants_left < 0)
 			return idx;
+			*/
 	}
 
 	return cnt;
@@ -146,7 +161,7 @@ int ndpip_udp_send_data(struct ndpip_udp_socket *udp_sock, struct ndpip_pbuf **p
 		iph->tot_len = htons(tot_len);
 		uh->uh_ulen = htons(sizeof(struct udphdr) + data_len);
 
-		sock->grants -= sock->grants_overhead + tot_len;
+		sock->grants -= sock->grants_overhead + ndpip_pbuf_length(pb[idx]);
 
 		ndpip_udp_prepare_pbuf(udp_sock, pb[idx], iph, uh);
 
@@ -173,13 +188,12 @@ static void ndpip_udp_prepare_pbuf(struct ndpip_udp_socket *udp_sock, struct ndp
 	if (ndpip_iface_has_offload(sock->iface, NDPIP_IFACE_OFFLOAD_TX_IPV4_CSUM))
 		ndpip_pbuf_set_flag(pb, NDPIP_PBUF_F_TX_IP_CKSUM, true);
 	else
-		iph->check = iphv4_checksum(iph);
+		iph->check = ndpip_ipv4_cksum(iph);
 
-	if (ndpip_iface_has_offload(sock->iface, NDPIP_IFACE_OFFLOAD_TX_UDPV4_CSUM)) {
-		uh->uh_sum = ipv4_checksum_pheader(iph, iph->ihl << 2);
+	if (ndpip_iface_has_offload(sock->iface, NDPIP_IFACE_OFFLOAD_TX_UDPV4_CSUM))
 		ndpip_pbuf_set_flag(pb, NDPIP_PBUF_F_TX_UDP_CKSUM, true);
-	} else {
+	else {
 		uh->uh_sum = 0;
-		uh->uh_sum = ipv4_checksum(iph);
+		uh->uh_sum = ndpip_ipv4_udptcp_cksum(iph, uh);
 	}
 }

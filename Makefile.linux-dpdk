@@ -1,8 +1,8 @@
 APP = eqds-tcp-perf
 
-AR = gcc-ar
-CC = gcc
-PKGCONF = pkg-config
+AR ?= ar
+CC ?= gcc
+PKGCONF ?= pkg-config
 
 SRCS-y += src/tcp.c
 SRCS-y += src/udp.c
@@ -10,7 +10,6 @@ SRCS-y += src/socket.c
 SRCS-y += src/util.c
 SRCS-y += src/workhorse.c
 SRCS-y += src/linux_dpdk.c
-SRCS-y += libdnet-imported/src/ip-util.c
 
 OBJS-y = $(patsubst %.c,%.c.o,$(SRCS-y))
 
@@ -21,11 +20,8 @@ CFLAGS += -Wall
 CFLAGS += -Wno-address-of-packed-member
 CFLAGS += -g
 CFLAGS += -std=gnu17
-#CFLAGS += -flto
 CFLAGS += -DNDPIP_LINUX_DPDK
 CFLAGS += -Isrc/include
-CFLAGS += -Ilibdnet-imported/include
-CFLAGS += -IxxHash-imported
 
 CFLAGS += $(shell $(PKGCONF) --cflags libdpdk)
 

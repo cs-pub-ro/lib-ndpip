@@ -64,7 +64,8 @@ int ndpip_linux_dpdk_register_iface(int netdev_id)
 	(&iface)->iface_tx_queue_id = 0;
 
 	memset(&(&iface)->iface_conf, 0, sizeof(struct rte_eth_conf));
-        (&iface)->iface_conf.rxmode.mtu = NDPIP_TODO_MTU;
+        (&iface)->iface_conf.rxmode.max_lro_pkt_size = NDPIP_TODO_MTU;
+//        (&iface)->iface_conf.rxmode.mtu = NDPIP_TODO_MTU;
 
 	if (rte_eth_dev_info_get((&iface)->iface_netdev_id, &(&iface)->iface_dev_info) < 0) {
 		perror("rte_eth_dev_info_get");
@@ -144,6 +145,7 @@ int ndpip_linux_dpdk_iface_xmit(struct ndpip_iface *iface, struct ndpip_pbuf **p
 		for (uint16_t idx = 0; idx < cnt; idx++)
 			rte_mbuf_refcnt_update(mb[idx], 1);
 
+	rte_eth_tx_prepare(iface_linux_dpdk->iface_netdev_id, iface_linux_dpdk->iface_tx_queue_id, mb, cnt);
 	uint16_t max_burst = ndpip_iface_get_burst_size(iface);
 
 	for (uint16_t idx = 0; idx < cnt;) {
@@ -448,5 +450,16 @@ uint16_t ndpip_linux_dpdk_iface_get_mtu(struct ndpip_iface *iface)
 {
 	struct ndpip_linux_dpdk_iface *iface_linux_dpdk = (void *) iface;
 
-	return iface_linux_dpdk->iface_conf.rxmode.mtu;
+	return iface_linux_dpdk->iface_conf.rxmode.max_lro_pkt_size;
+//	return iface_linux_dpdk->iface_conf.rxmode.mtu;
+}
+
+uint16_t ndpip_linux_dpdk_ipv4_cksum(struct iphdr *iph)
+{
+	return rte_ipv4_cksum((void *) iph);
+}
+
+uint16_t ndpip_linux_dpdk_ipv4_udptcp_cksum(struct iphdr *iph, void *l4h)
+{
+	return rte_ipv4_udptcp_cksum((void *) iph, l4h);
 }

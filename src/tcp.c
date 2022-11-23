@@ -6,8 +6,6 @@
 #include <assert.h>
 #include <string.h>
 
-#include <dnet/ip.h>
-
 
 #define NDPIP_TODO_TCP_RETRANSMIT_COUNT 3
 #define NDPIP_TODO_TCP_WIN_SIZE 65535
@@ -81,10 +79,13 @@ int ndpip_tcp_connect(struct ndpip_tcp_socket *tcp_sock)
 	tcp_sock->tcp_seq++;
 
 	struct ndpip_established_key key = {
-		.local = sock->local,
-		.remote = sock->remote,
-		.protocol = IPPROTO_TCP
+		.saddr = sock->remote.sin_addr.s_addr,
+		.daddr = sock->local.sin_addr.s_addr,
+		.sport = sock->remote.sin_port,
+		.dport = sock->local.sin_port,
+		.proto = IPPROTO_TCP
 	};
+
 	ndpip_hashtable_put(ndpip_established_sockets, &key, sizeof(key), tcp_sock);
 
 	tcp_sock->state = CONNECTING;
@@ -288,29 +289,27 @@ uint16_t ndpip_tcp_max_xmit(struct ndpip_tcp_socket *tcp_sock, struct ndpip_pbuf
 {
 	struct ndpip_socket *sock = &tcp_sock->socket;
 
-	/*
-	static size_t xmit_ring_size_sum = 0;
-	static size_t xmit_ring_size_iter = 0;
+	{
+		static size_t xmit_ring_size_sum = 0;
+		static size_t xmit_ring_size_iter = 0;
 
-	xmit_ring_size_sum += ndpip_ring_size(sock->xmit_ring);
-	xmit_ring_size_iter++;
+		xmit_ring_size_sum += ndpip_ring_size(sock->xmit_ring);
+		xmit_ring_size_iter++;
 
-	if (xmit_ring_size_iter > 1000000000UL) {
-		xmit_ring_size_sum = 0;
-		xmit_ring_size_iter = 0;
-		printf("TCP-max_xmit: xmit_ring_size_sum=%lu;\n", xmit_ring_size_sum);
+		if (xmit_ring_size_iter > 1000000000UL) {
+			xmit_ring_size_sum = 0;
+			xmit_ring_size_iter = 0;
+			printf("TCP-max_xmit: xmit_ring_size_sum=%lu;\n", xmit_ring_size_sum);
+		}
 	}
 
-        if (ndpip_ring_size(sock->xmit_ring) != 0)
-                return 0;
-	*/
-	
 	if (cnt == 0)
 		return 0;
 
-	int64_t grants_overhead = sock->grants_overhead;
-	if (grants_overhead < 0)
+	/*
+	if (sock->grants_overhead < 0)
 		return 0;
+		*/
 
 	if (tcp_sock->tcp_rto)
 		return 0;
@@ -318,19 +317,20 @@ uint16_t ndpip_tcp_max_xmit(struct ndpip_tcp_socket *tcp_sock, struct ndpip_pbuf
 	uint16_t burst_size = ndpip_iface_get_burst_size(sock->iface);
 	cnt = cnt < burst_size ? cnt : burst_size;
 
-	uint32_t max_data = tcp_sock->tcp_max_seq - tcp_sock->tcp_seq;
-	uint32_t seq = 0;
+	uint32_t data_left = tcp_sock->tcp_max_seq - tcp_sock->tcp_seq;
 	int64_t grants_left = sock->grants;
 
 	for (uint16_t idx = 0; idx < cnt; idx++) {
-		seq += ndpip_pbuf_length(pb[idx]);
-		grants_left -= grants_overhead + sizeof(struct iphdr) + sizeof(struct tcphdr) + ndpip_pbuf_length(pb[idx]);
+		data_left -= ndpip_pbuf_length(pb[idx]);
+		grants_left -= sock->grants_overhead + sizeof(struct ethhdr) + sizeof(struct iphdr) + sizeof(struct tcphdr) + ndpip_pbuf_length(pb[idx]);
 
-		if (seq > max_data)
+		if (data_left < 0)
 			return idx;
 
-		if (grants_left <= 0)
+		/*
+		if (grants_left < -17000)
 			return idx;
+			*/
 	}
 
 	return cnt;
@@ -342,9 +342,11 @@ int ndpip_tcp_close(struct ndpip_tcp_socket *tcp_sock)
 
 	if ((tcp_sock->state != CLOSED) && (tcp_sock->state != LISTENING)) {
 		struct ndpip_established_key key = {
-			.local = sock->local,
-			.remote = sock->remote,
-			.protocol = IPPROTO_TCP
+			.saddr = sock->remote.sin_addr.s_addr,
+			.daddr = sock->local.sin_addr.s_addr,
+			.sport = sock->remote.sin_port,
+			.dport = sock->local.sin_port,
+			.proto = IPPROTO_TCP
 		};
 
 		ndpip_hashtable_del(ndpip_established_sockets, &key, sizeof(key));
@@ -369,8 +371,9 @@ int ndpip_tcp_close(struct ndpip_tcp_socket *tcp_sock)
 
 	if (tcp_sock->state == LISTENING) {
 		struct ndpip_listening_key key = {
-			.local = sock->local,
-			.protocol = IPPROTO_TCP
+			.daddr = sock->local.sin_addr.s_addr,
+			.dport = sock->local.sin_port,
+			.proto = IPPROTO_TCP
 		};
 
 		ndpip_hashtable_del(ndpip_listening_sockets, &key, sizeof(key));
@@ -384,6 +387,7 @@ int ndpip_tcp_send_data(struct ndpip_tcp_socket *tcp_sock, struct ndpip_pbuf **p
 {
 	struct ndpip_socket *sock = &tcp_sock->socket;
 
+	/*
 	{
 		static int64_t grants_acc_before = 0;
 		static int64_t grants_acc_iter = 0;
@@ -393,13 +397,14 @@ int ndpip_tcp_send_data(struct ndpip_tcp_socket *tcp_sock, struct ndpip_pbuf **p
 		grants_acc_iter++;
 
 		if ((rdtsc() - grants_acc_before) > 1000000000UL) {
-			//printf("grants=%ld;\n", grants_acc / grants_acc_iter);
+			printf("grants=%ld;\n", grants_acc / grants_acc_iter);
 
 			grants_acc = 0;
 			grants_acc_iter = 0;
 			grants_acc_before = rdtsc();
 		}
 	}
+	*/
 
 	if (tcp_sock->state != CONNECTED) {
 		errno = EINVAL;
@@ -433,7 +438,7 @@ int ndpip_tcp_send_data(struct ndpip_tcp_socket *tcp_sock, struct ndpip_pbuf **p
 
 		tcp_sock->tcp_seq += data_len;
 
-		sock->grants -= sock->grants_overhead + tot_len;
+		sock->grants -= sock->grants_overhead + ndpip_pbuf_length(pb[idx]);
 
 		struct ndpip_pbuf_meta *pm = ndpip_pbuf_metadata(pb[idx]);
 		pm->xmit_tsc = tsc_now;
@@ -633,7 +638,7 @@ int ndpip_tcp_feed(struct ndpip_tcp_socket *tcp_sock, struct sockaddr_in *remote
 
 		ndpip_tcp_parse_opts(tcp_asock, th, th_hlen);
 
-	    if (ndpip_tcp_build_xmit_template(tcp_asock) < 0)
+		if (ndpip_tcp_build_xmit_template(tcp_asock) < 0)
 			goto err;
 
 		tcp_asock->tcp_ack = tcp_sock->tcp_ack;
@@ -641,12 +646,15 @@ int ndpip_tcp_feed(struct ndpip_tcp_socket *tcp_sock, struct sockaddr_in *remote
 		ndpip_tcp_build_syn(tcp_asock, true, rpb);
 		tcp_asock->tcp_seq++;
 
-        struct ndpip_established_key key = {
-			.local = asock->local,
-			.remote = asock->remote,
-			.protocol = IPPROTO_TCP
+		struct ndpip_established_key key = {
+			.saddr = asock->remote.sin_addr.s_addr,
+			.daddr = asock->local.sin_addr.s_addr,
+			.sport = asock->remote.sin_port,
+			.dport = asock->local.sin_port,
+			.proto = IPPROTO_TCP
 		};
-	    ndpip_hashtable_put(ndpip_established_sockets, &key, sizeof(key), asock);
+
+		ndpip_hashtable_put(ndpip_established_sockets, &key, sizeof(key), asock);
 
 		ndpip_list_add(&tcp_sock->accept_queue, &tcp_asock->accept_queue);
 
@@ -739,13 +747,12 @@ static void ndpip_tcp_prepare_pbuf(struct ndpip_tcp_socket *tcp_sock, struct ndp
 	if (ndpip_iface_has_offload(sock->iface, NDPIP_IFACE_OFFLOAD_TX_IPV4_CSUM))
 		ndpip_pbuf_set_flag(pb, NDPIP_PBUF_F_TX_IP_CKSUM, true);
 	else
-		iph->check = iphv4_checksum(iph);
+		iph->check = ndpip_ipv4_cksum(iph);
 
-	if (ndpip_iface_has_offload(sock->iface, NDPIP_IFACE_OFFLOAD_TX_TCPV4_CSUM)) {
-		th->th_sum = ipv4_checksum_pheader(iph, iph->ihl << 2);
+	if (ndpip_iface_has_offload(sock->iface, NDPIP_IFACE_OFFLOAD_TX_TCPV4_CSUM))
 		ndpip_pbuf_set_flag(pb, NDPIP_PBUF_F_TX_TCP_CKSUM, true);
-	} else {
+	else {
 		th->th_sum = 0;
-		th->th_sum = ipv4_checksum(iph);
+		th->th_sum = ndpip_ipv4_udptcp_cksum(iph, th);
 	}
 }

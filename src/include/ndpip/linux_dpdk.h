@@ -82,6 +82,9 @@ void ndpip_linux_dpdk_pbuf_refcount_add(struct ndpip_pbuf *pb, int16_t val);
 
 void *ndpip_linux_dpdk_timers_thread(void *argp);
 
+uint16_t ndpip_linux_dpdk_ipv4_cksum(struct iphdr *iph);
+uint16_t ndpip_linux_dpdk_ipv4_udptcp_cksum(struct iphdr *iph, void *l4h);
+
 #define ndpip_iface_get_by_inaddr ndpip_linux_dpdk_iface_get_by_inaddr
 #define ndpip_iface_get_ethaddr ndpip_linux_dpdk_iface_get_ethaddr
 #define ndpip_iface_get_inaddr ndpip_linux_dpdk_iface_get_inaddr
@@ -124,5 +127,8 @@ void *ndpip_linux_dpdk_timers_thread(void *argp);
 
 #define ndpip_tsc ndpip_linux_dpdk_tsc
 #define ndpip_tsc2time ndpip_linux_dpdk_tsc2time
+
+#define ndpip_ipv4_cksum ndpip_linux_dpdk_ipv4_cksum
+#define ndpip_ipv4_udptcp_cksum ndpip_linux_dpdk_ipv4_udptcp_cksum
 
 #endif

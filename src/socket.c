@@ -13,13 +13,15 @@
 #define NDPIP_TODO_SOCKET_XMIT_RING_LENGTH (1 << 20)
 #define NDPIP_TODO_SOCKET_RECV_RING_LENGTH (1 << 20)
 
+#define NDPIP_EQDS_GRANTS_OVERHEAD 60
+
 
 struct ndpip_hashtable *ndpip_established_sockets = NULL;
 struct ndpip_hashtable *ndpip_listening_sockets = NULL;
 
 struct ndpip_socket **socket_table = NULL;
 
-static int ndpip_socket_grants_get(struct ndpip_socket *sock, uint32_t grants) {
+int ndpip_socket_grants_get(struct ndpip_socket *sock, uint32_t grants) {
 	struct ndpip_pbuf *pb;
 	
 	if (ndpip_sock_alloc(sock, &pb, 1, false) < 0)
@@ -35,8 +37,8 @@ static int ndpip_socket_grants_get(struct ndpip_socket *sock, uint32_t grants) {
 
 	uint8_t eth_dst[] = { 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF };
 
-    memcpy(eth->h_dest, eth_dst, ETH_ALEN);
-    memcpy(eth->h_source, eth_src, ETH_ALEN);
+	memcpy(eth->h_dest, eth_dst, ETH_ALEN);
+	memcpy(eth->h_source, eth_src, ETH_ALEN);
 
 	eth->h_proto = htons(ETH_P_EQDSCN);
 
@@ -85,7 +87,7 @@ struct ndpip_socket *ndpip_socket_new(int domain, int type, int protocol)
 	sock->protocol = protocol;
 	sock->iface = NULL;
 	sock->grants = 0;
-	sock->grants_overhead = 60;
+	sock->grants_overhead = NDPIP_EQDS_GRANTS_OVERHEAD;
 	sock->grants_overcommit = 0;
 
 	sock->local = (struct sockaddr_in) { .sin_family = AF_INET, .sin_addr.s_addr = 0, .sin_port = 0 };
@@ -207,8 +209,12 @@ int ndpip_bind(int sockfd, const struct sockaddr *addr, socklen_t addrlen)
 	}
 
 	if (sock->protocol == IPPROTO_UDP) {
-		struct ndpip_listening_key key = { .local = sock->local, .protocol = IPPROTO_UDP };
-		//printf("PUT-LIST: %x:%d %d\n", key.local.sin_addr.s_addr, key.local.sin_port, IPPROTO_UDP);
+		struct ndpip_listening_key key = {
+			.daddr = sock->local.sin_addr.s_addr,
+			.dport = sock->local.sin_port,
+			.proto = IPPROTO_UDP
+		};
+
 		ndpip_hashtable_put(ndpip_listening_sockets, &key, sizeof(key), sock);
 	}
 
@@ -245,8 +251,9 @@ int ndpip_listen(int sockfd, int backlog)
 	tcp_sock->state = LISTENING;
 
 	struct ndpip_listening_key key = {
-		.local = sock->local,
-		.protocol = IPPROTO_TCP
+		.daddr = sock->local.sin_addr.s_addr,
+		.dport = sock->local.sin_port,
+		.proto = IPPROTO_TCP
 	};
 
 	ndpip_hashtable_put(ndpip_listening_sockets, &key, sizeof(key), sock);
@@ -280,7 +287,7 @@ int ndpip_connect(int sockfd, const struct sockaddr *addr, socklen_t addrlen)
 	if (sock->protocol == IPPROTO_TCP)
 		return ndpip_tcp_connect((struct ndpip_tcp_socket *) sock);
 
-    if (sock->protocol == IPPROTO_UDP)
+	if (sock->protocol == IPPROTO_UDP)
 		return ndpip_udp_connect((struct ndpip_udp_socket *) sock);
 
 	errno = EOPNOTSUPP;
@@ -449,7 +456,7 @@ int ndpip_cost(int sockfd, struct ndpip_pbuf **pb, uint16_t len, uint16_t *pb_co
 		if (sock->protocol == IPPROTO_UDP)
 			transport_overhead = sizeof(struct udphdr);
 
-		pb_cost[idx] = sock->grants_overhead + sizeof(struct iphdr) + transport_overhead + ndpip_pbuf_length(pb[idx]);
+		pb_cost[idx] = sock->grants_overhead + sizeof(struct ethhdr) + sizeof(struct iphdr) + transport_overhead + ndpip_pbuf_length(pb[idx]);
 	}
 
 	return 0;
@@ -646,29 +653,27 @@ int ndpip_close(int sockfd)
 
 struct ndpip_socket *ndpip_socket_get_by_peer(struct sockaddr_in *local, struct sockaddr_in *remote, int protocol)
 {
-	if (ndpip_established_sockets == NULL)
+	if (socket_table == NULL)
 		return NULL;
 
 	struct ndpip_established_key key = {
-		.local = *local,
-		.remote = *remote,
-		.protocol = protocol
+		.saddr = remote->sin_addr.s_addr,
+		.daddr = local->sin_addr.s_addr,
+		.sport = remote->sin_port,
+		.dport = local->sin_port,
+		.proto = protocol
 	};
 
 	struct ndpip_socket *ret = ndpip_hashtable_get(ndpip_established_sockets, &key, sizeof(key));
 	if (ret != NULL)
 		return ret;
 
-	if (ndpip_listening_sockets == NULL)
-		return NULL;
-
 	struct ndpip_listening_key key2 = {
-		.local = *local,
-		.protocol = protocol
+		.daddr = local->sin_addr.s_addr,
+		.dport = local->sin_port,
+		.proto = protocol
 	};
 
-
-	//printf("GET-LIST: %x:%d %d\n", key.local.sin_addr.s_addr, key.local.sin_port, IPPROTO_UDP);
 	return ndpip_hashtable_get(ndpip_listening_sockets, &key2, sizeof(key2));
 }
 

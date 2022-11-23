@@ -27,15 +27,18 @@ extern struct ndpip_hashtable *ndpip_established_sockets;
 extern struct ndpip_hashtable *ndpip_listening_sockets;
 
 struct ndpip_established_key {
-	struct sockaddr_in local;
-	struct sockaddr_in remote;
-	int protocol;
-};
+	uint32_t saddr;
+	uint32_t daddr;
+	uint16_t sport;
+	uint16_t dport;
+	int proto;
+} __attribute__((packed));
 
 struct ndpip_listening_key {
-	struct sockaddr_in local;
-	int protocol;
-};
+	uint32_t daddr;
+	uint16_t dport;
+	int proto;
+} __attribute__((packed));
 
 struct ndpip_socket {
 	struct ndpip_list_head list;
@@ -60,6 +63,7 @@ struct ndpip_socket *ndpip_socket_accept(struct ndpip_socket *sock);
 int ndpip_sock_free(struct ndpip_socket *sock, struct ndpip_pbuf **pb, uint16_t len, bool rx);
 int ndpip_sock_alloc(struct ndpip_socket *sock, struct ndpip_pbuf **pb, uint16_t len, bool rx);
 struct ndpip_socket *ndpip_socket_get_by_peer(struct sockaddr_in *local, struct sockaddr_in *remote, int protocol);
+int ndpip_socket_grants_get(struct ndpip_socket *sock, uint32_t grants);
 
 extern struct ndpip_socket **socket_table;
 

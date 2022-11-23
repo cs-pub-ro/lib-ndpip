@@ -23,7 +23,6 @@
 #include <netinet/udp.h>
 #include <netinet/tcp.h>
 
-#include <dnet/ip.h>
 
 bool ndpip_log_grants = false;
 int64_t (*ndpip_log_grants_msg)[5];
@@ -37,6 +36,9 @@ int ndpip_rx_thread(void *argp)
 	uint64_t iter = 0;
 	uint64_t pkt_cnt_a = 0;
 	uint64_t replies_len_a = 0;
+
+	struct timespec before;
+	ndpip_time_now(&before);
 
 	while (ndpip_iface_rx_thread_running(iface)) {
 		uint16_t pkt_cnt = burst_size;
@@ -115,7 +117,10 @@ int ndpip_rx_thread(void *argp)
 			struct iphdr *iph = ndpip_pbuf_data(pb);
 
 			if (!ndpip_iface_has_offload(iface, NDPIP_IFACE_OFFLOAD_RX_IPV4_CSUM)) {
-				if (iphv4_checksum(iph) != 0)
+				uint16_t csum = iph->check;
+
+				iph->check = 0;
+				if (csum != ndpip_ipv4_cksum(iph))
 					goto free_pkt;
 			}
 
@@ -134,7 +139,10 @@ int ndpip_rx_thread(void *argp)
 				struct tcphdr *th = ndpip_pbuf_data(pb);
 
 				if (!ndpip_iface_has_offload(iface, NDPIP_IFACE_OFFLOAD_RX_TCPV4_CSUM)) {
-					if (ipv4_checksum(iph) != 0)
+					uint16_t csum = th->th_sum;
+
+					th->th_sum = 0;
+					if (csum != ndpip_ipv4_udptcp_cksum(iph, th))
 						goto free_pkt;
 				} else {
 					if (ndpip_pbuf_has_flag(pb, NDPIP_PBUF_F_RX_L4_CSUM_BAD))
@@ -174,7 +182,10 @@ int ndpip_rx_thread(void *argp)
 				struct udphdr *uh = ndpip_pbuf_data(pb);
 
 				if (!ndpip_iface_has_offload(iface, NDPIP_IFACE_OFFLOAD_RX_UDPV4_CSUM)) {
-					if (ipv4_checksum(iph) != 0)
+					uint16_t csum = uh->uh_sum;
+
+					uh->uh_sum = 0;
+					if (csum != ndpip_ipv4_udptcp_cksum(iph, uh))
 						goto free_pkt;
 				} else {
 					if (ndpip_pbuf_has_flag(pb, NDPIP_PBUF_F_RX_L4_CSUM_BAD))
@@ -240,10 +251,16 @@ free_pkt:
 		iter++;
 
 		if (iter >= 50000UL) {
-			printf("avg_burst=%lu; avg_replies=%lu;\n", pkt_cnt_a / iter, replies_len_a / iter);
+			struct timespec now;
+                        ndpip_time_now(&now);
+
+                        uint64_t delta = (now.tv_sec - before.tv_sec) * 1000000000UL + (now.tv_nsec - before.tv_nsec);
+
+			//printf("avg_burst=%lu; avg_replies=%lu; pps=%lu;\n", pkt_cnt_a / iter, replies_len_a / iter, pkt_cnt_a * 1000000000 / delta);
 			replies_len_a = 0;
 			pkt_cnt_a = 0;
 			iter = 0;
+			before = now;
 		}
 
 		ndpip_thread_yield();
