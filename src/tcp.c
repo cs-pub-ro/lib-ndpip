@@ -516,7 +516,7 @@ void ndpip_tcp_free_acked(struct ndpip_tcp_socket *tcp_sock)
 	ndpip_ring_peek(sock->xmit_ring, &cnt, &pb);
 	struct tcphdr *th = ndpip_pbuf_data(pb) + sizeof(struct ethhdr) + sizeof(struct iphdr);
 
-	ssize_t max_data = tcp_sock->tcp_last_ack - ntohl(th->th_seq);
+	uint32_t max_data = tcp_sock->tcp_last_ack - ntohl(th->th_seq);
 
 	size_t idx;
 	for (idx = 0; idx < xmit_ring_size; idx++) {

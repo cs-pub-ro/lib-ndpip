@@ -80,8 +80,11 @@ struct ndpip_socket *ndpip_socket_new(int domain, int type, int protocol)
 	if (protocol == IPPROTO_TCP)
 		sock = malloc(sizeof(struct ndpip_tcp_socket));
 
-	if (protocol == IPPROTO_UDP)
+	else if (protocol == IPPROTO_UDP)
 		sock = malloc(sizeof(struct ndpip_udp_socket));
+
+	else
+		return NULL;
 
 	sock->socket_id = socket_id;
 	sock->protocol = protocol;
@@ -664,17 +667,29 @@ struct ndpip_socket *ndpip_socket_get_by_peer(struct sockaddr_in *local, struct 
 		.proto = protocol
 	};
 
-	struct ndpip_socket *ret = ndpip_hashtable_get(ndpip_established_sockets, &key, sizeof(key));
-	if (ret != NULL)
-		return ret;
-
 	struct ndpip_listening_key key2 = {
 		.daddr = local->sin_addr.s_addr,
 		.dport = local->sin_port,
 		.proto = protocol
 	};
 
-	return ndpip_hashtable_get(ndpip_listening_sockets, &key2, sizeof(key2));
+	if (protocol == IPPROTO_TCP) {
+		struct ndpip_socket *ret = ndpip_hashtable_get(ndpip_established_sockets, &key, sizeof(key));
+		if (ret != NULL)
+			return ret;
+
+		return ndpip_hashtable_get(ndpip_listening_sockets, &key2, sizeof(key2));
+	}
+
+	if (protocol == IPPROTO_UDP) {
+		struct ndpip_socket *ret = ndpip_hashtable_get(ndpip_listening_sockets, &key, sizeof(key));
+		if (ret != NULL)
+			return ret;
+
+		return ndpip_hashtable_get(ndpip_established_sockets, &key2, sizeof(key2));
+	}
+
+	return NULL;
 }
 
 /*
