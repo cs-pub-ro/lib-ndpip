@@ -1,0 +1,11 @@
+prefix=@prefix@
+libdir=@prefix@/lib
+includedir=@prefix@/include
+
+Name: ndpip
+Description: ndpip library provides a TCP/IP stack on top of DPDK
+Version: 0
+
+Requires: libdpdk
+Libs: -L${libdir} -lndpip
+Cflags: -I${includedir}

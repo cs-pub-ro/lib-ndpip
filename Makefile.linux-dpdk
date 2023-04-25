@@ -1,8 +1,7 @@
-APP = eqds-tcp-perf
-
 AR ?= ar
 CC ?= gcc
 PKGCONF ?= pkg-config
+PREFIX ?=
 
 SRCS-y += src/tcp.c
 SRCS-y += src/udp.c
@@ -14,6 +13,7 @@ SRCS-y += src/linux_dpdk.c
 OBJS-y = $(patsubst %.c,%.c.o,$(SRCS-y))
 
 LIB = libndpip.a
+PC = ndpip.pc
 
 CFLAGS ?=
 CFLAGS += -O3
@@ -28,13 +28,16 @@ CFLAGS += -Isrc/include
 
 CFLAGS += $(shell $(PKGCONF) --cflags libdpdk)
 
-all: $(LIB)
+all: $(LIB) $(PC)
 
 %.c.o: %.c
 	$(CC) -c $(CFLAGS) -o $@ $<
 
 $(LIB): $(OBJS-y)
 	$(AR) rcs $@ $(OBJS-y)
+
+$(PC): $(PC).in
+	sed "s|@prefix@|${PREFIX}|g" $< >$@
 
 clean:
 	rm -f $(OBJS-y) $(LIB)
