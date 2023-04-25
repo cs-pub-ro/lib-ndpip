@@ -136,8 +136,8 @@ int ndpip_tcp_build_xmit_template(struct ndpip_tcp_socket *tcp_sock)
 
 	struct tcphdr *th = ((void *) iph) + sizeof(struct iphdr);
 	*th = (struct tcphdr) {
-		.th_sport = htons(sock->local.sin_port),
-		.th_dport = htons(sock->remote.sin_port),
+		.th_sport = sock->local.sin_port,
+		.th_dport = sock->remote.sin_port,
 		.th_seq = 0,
 		.th_ack = 0,
 		.th_x2 = 0,
@@ -317,7 +317,8 @@ uint16_t ndpip_tcp_max_xmit(struct ndpip_tcp_socket *tcp_sock, struct ndpip_pbuf
 	uint16_t burst_size = ndpip_iface_get_burst_size(sock->iface);
 	cnt = cnt < burst_size ? cnt : burst_size;
 
-	uint32_t data_left = tcp_sock->tcp_max_seq - tcp_sock->tcp_seq;
+	uint32_t tmp_left = tcp_sock->tcp_max_seq - tcp_sock->tcp_seq;
+	int64_t data_left = tmp_left;
 	int64_t grants_left = sock->grants;
 
 	for (uint16_t idx = 0; idx < cnt; idx++) {

@@ -62,8 +62,8 @@ int ndpip_udp_build_xmit_template(struct ndpip_udp_socket *udp_sock) {
 
 	struct udphdr *uh = ((void *) iph) + sizeof(struct iphdr);
 	*uh = (struct udphdr) {
-		.uh_sport = htons(sock->local.sin_port),
-		.uh_dport = htons(sock->remote.sin_port)
+		.uh_sport = sock->local.sin_port,
+		.uh_dport = sock->remote.sin_port
 	};
 
 	return 0;
@@ -161,7 +161,7 @@ int ndpip_udp_send_data(struct ndpip_udp_socket *udp_sock, struct ndpip_pbuf **p
 		iph->tot_len = htons(tot_len);
 		uh->uh_ulen = htons(sizeof(struct udphdr) + data_len);
 
-		sock->grants -= sock->grants_overhead + ndpip_pbuf_length(pb[idx]);
+		//sock->grants -= sock->grants_overhead + ndpip_pbuf_length(pb[idx]);
 
 		ndpip_udp_prepare_pbuf(udp_sock, pb[idx], iph, uh);
 

@@ -116,6 +116,7 @@ int ndpip_rx_thread(void *argp)
 
 			struct iphdr *iph = ndpip_pbuf_data(pb);
 
+			/*
 			if (!ndpip_iface_has_offload(iface, NDPIP_IFACE_OFFLOAD_RX_IPV4_CSUM)) {
 				uint16_t csum = iph->check;
 
@@ -123,6 +124,7 @@ int ndpip_rx_thread(void *argp)
 				if (csum != ndpip_ipv4_cksum(iph))
 					goto free_pkt;
 			}
+			*/
 
 			if (!((iph->ihl == 5) && (iph->version == 4)))
 				goto free_pkt;
@@ -138,6 +140,7 @@ int ndpip_rx_thread(void *argp)
 			if (protocol == IPPROTO_TCP) {
 				struct tcphdr *th = ndpip_pbuf_data(pb);
 
+				/*
 				if (!ndpip_iface_has_offload(iface, NDPIP_IFACE_OFFLOAD_RX_TCPV4_CSUM)) {
 					uint16_t csum = th->th_sum;
 
@@ -148,39 +151,42 @@ int ndpip_rx_thread(void *argp)
 					if (ndpip_pbuf_has_flag(pb, NDPIP_PBUF_F_RX_L4_CSUM_BAD))
 						goto free_pkt;
 				}
+				*/
 
 				struct sockaddr_in local = {
 					.sin_family = AF_INET,
 					.sin_addr.s_addr = iph->daddr,
-					.sin_port = ntohs(th->th_dport)
+					.sin_port = th->th_dport
 				};
 
 				struct sockaddr_in remote = {
 					.sin_family = AF_INET,
 					.sin_addr.s_addr = iph->saddr,
-					.sin_port = ntohs(th->th_sport)
+					.sin_port = th->th_sport
 				};
 
 				struct ndpip_tcp_socket *tcp_sock = (struct ndpip_tcp_socket *) ndpip_socket_get_by_peer(&local, &remote, IPPROTO_TCP);
 				if (tcp_sock == NULL)
 					goto free_pkt;
 
-				if (!tcp_sock->rx_loop_seen) {
-					reply_sockets[reply_sockets_len++] = tcp_sock;
-					tcp_sock->rx_loop_seen = true;
-				}
-
 				int r = ndpip_tcp_feed(tcp_sock, &remote, pb, replies[replies_len]);
 				if (r == 1)
 					replies_len++;
 
-				if (r == 2)
+				if (r == 2) {
+					if (!tcp_sock->rx_loop_seen) {
+						reply_sockets[reply_sockets_len++] = tcp_sock;
+						tcp_sock->rx_loop_seen = true;
+					}
+
 					continue;
+				}
 			}
 
 			if (protocol == IPPROTO_UDP) {
 				struct udphdr *uh = ndpip_pbuf_data(pb);
 
+				/*
 				if (!ndpip_iface_has_offload(iface, NDPIP_IFACE_OFFLOAD_RX_UDPV4_CSUM)) {
 					uint16_t csum = uh->uh_sum;
 
@@ -191,17 +197,18 @@ int ndpip_rx_thread(void *argp)
 					if (ndpip_pbuf_has_flag(pb, NDPIP_PBUF_F_RX_L4_CSUM_BAD))
 						goto free_pkt;
 				}
+				*/
 
 				struct sockaddr_in local = {
 					.sin_family = AF_INET,
 					.sin_addr.s_addr = iph->daddr,
-					.sin_port = ntohs(uh->uh_dport)
+					.sin_port = uh->uh_dport
 				};
 
 				struct sockaddr_in remote = {
 					.sin_family = AF_INET,
 					.sin_addr.s_addr = iph->saddr,
-					.sin_port = ntohs(uh->uh_sport)
+					.sin_port = uh->uh_sport
 				};
 
 				struct ndpip_udp_socket *udp_sock = (struct ndpip_udp_socket *) ndpip_socket_get_by_peer(&local, &remote, IPPROTO_UDP);
@@ -256,7 +263,7 @@ free_pkt:
 
                         uint64_t delta = (now.tv_sec - before.tv_sec) * 1000000000UL + (now.tv_nsec - before.tv_nsec);
 
-			//printf("avg_burst=%lu; avg_replies=%lu; pps=%lu;\n", pkt_cnt_a / iter, replies_len_a / iter, pkt_cnt_a * 1000000000 / delta);
+			printf("avg_burst=%lu; avg_replies=%lu; pps=%lu;\n", pkt_cnt_a / iter, replies_len_a / iter, pkt_cnt_a * 1000000000 / delta);
 			replies_len_a = 0;
 			pkt_cnt_a = 0;
 			iter = 0;

@@ -214,11 +214,8 @@ uint64_t ndpip_hash(void *key, size_t key_size)
 	for (;idx <= (key_size - sizeof(uint64_t)); idx += sizeof(uint64_t))
 		ret += *(uint64_t *)(key + idx);
 
-	if (idx != key_size) {
-		uint64_t a = *(uint64_t *)(key + idx);
-		uint8_t shift = (sizeof(uint64_t) + idx - key_size) * 8;
-		ret += (a << shift) >> shift;
-	}
+	for (;idx < key_size; idx++)
+		ret += *(uint8_t *)(key + idx);
 
 	return ret;
 }
@@ -226,7 +223,11 @@ uint64_t ndpip_hash(void *key, size_t key_size)
 void *ndpip_hashtable_get(struct ndpip_hashtable *hashtable, void *key, size_t key_size)
 {
 	uint64_t hash = ndpip_hash(key, key_size);
-	//printf("GET: %lx\n", hash);
+	/*
+	if ((hash != 0x20101108a148a1dUL) && (hash != 0x10101108b148a1dUL) && (hash != 0x689130201010aUL))
+		printf("%lx\n", hash);
+		*/
+
 	struct ndpip_list_head *bucket = (void *) &hashtable->hashtable_buckets[hash & hashtable->hashtable_mask];
 
 	ndpip_list_foreach(struct ndpip_hlist_node, hnode, bucket) {
@@ -240,7 +241,6 @@ void *ndpip_hashtable_get(struct ndpip_hashtable *hashtable, void *key, size_t k
 void ndpip_hashtable_put(struct ndpip_hashtable *hashtable, void *key, size_t key_size, void *data)
 {
 	uint64_t hash = ndpip_hash(key, key_size);
-	//printf("PUT: %lx\n", hash);
 	struct ndpip_list_head *bucket = (void *) &hashtable->hashtable_buckets[hash & hashtable->hashtable_mask];
 
 	struct ndpip_hlist_node *hnode = malloc(sizeof(struct ndpip_hlist_node));

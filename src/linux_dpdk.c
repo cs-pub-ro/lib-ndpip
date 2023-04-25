@@ -9,7 +9,7 @@
 
 #define NDPIP_TODO_NB_MBUF (1 << 15)
 #define NDPIP_TODO_MEMPOOL_CACHE_SZ 256
-#define NDPIP_TODO_MBUF_SIZE 3072
+#define NDPIP_TODO_MBUF_SIZE 3062
 #define NDPIP_TODO_MTU 1500
 #define NDPIP_DPDK_LINUX_MBUF_PRIVATE RTE_ALIGN_CEIL(sizeof(struct ndpip_pbuf_meta), RTE_MBUF_PRIV_ALIGN)
 
@@ -78,11 +78,17 @@ int ndpip_linux_dpdk_register_iface(int netdev_id)
 	if ((&iface)->iface_dev_info.tx_offload_capa & DEV_TX_OFFLOAD_TCP_CKSUM)
         	(&iface)->iface_conf.txmode.offloads |= DEV_TX_OFFLOAD_TCP_CKSUM;
 
+	if ((&iface)->iface_dev_info.tx_offload_capa & DEV_TX_OFFLOAD_UDP_CKSUM)
+        	(&iface)->iface_conf.txmode.offloads |= DEV_TX_OFFLOAD_UDP_CKSUM;
+
 	if ((&iface)->iface_dev_info.rx_offload_capa & DEV_RX_OFFLOAD_IPV4_CKSUM)
         	(&iface)->iface_conf.rxmode.offloads |= DEV_RX_OFFLOAD_IPV4_CKSUM;
 
 	if ((&iface)->iface_dev_info.rx_offload_capa & DEV_RX_OFFLOAD_TCP_CKSUM)
         	(&iface)->iface_conf.rxmode.offloads |= DEV_RX_OFFLOAD_TCP_CKSUM;
+
+	if ((&iface)->iface_dev_info.rx_offload_capa & DEV_RX_OFFLOAD_UDP_CKSUM)
+        	(&iface)->iface_conf.rxmode.offloads |= DEV_RX_OFFLOAD_UDP_CKSUM;
 
 	if (rte_eth_dev_configure((&iface)->iface_netdev_id, 1, 1, &(&iface)->iface_conf) < 0) {
 		perror("rte_eth_dev_configure");
@@ -456,10 +462,12 @@ uint16_t ndpip_linux_dpdk_iface_get_mtu(struct ndpip_iface *iface)
 
 uint16_t ndpip_linux_dpdk_ipv4_cksum(struct iphdr *iph)
 {
+	return 0;
 	return rte_ipv4_cksum((void *) iph);
 }
 
 uint16_t ndpip_linux_dpdk_ipv4_udptcp_cksum(struct iphdr *iph, void *l4h)
 {
+	return 0;
 	return rte_ipv4_udptcp_cksum((void *) iph, l4h);
 }

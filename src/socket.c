@@ -673,23 +673,17 @@ struct ndpip_socket *ndpip_socket_get_by_peer(struct sockaddr_in *local, struct 
 		.proto = protocol
 	};
 
-	if (protocol == IPPROTO_TCP) {
-		struct ndpip_socket *ret = ndpip_hashtable_get(ndpip_established_sockets, &key, sizeof(key));
-		if (ret != NULL)
-			return ret;
+	/*
+	printf("GET_ESTABLISHED: ");
+	for (int i = 0; i < sizeof(key); i++)
+		printf("%hhx", ((uint8_t *)&key)[i]);
+	printf("\n");
+	*/
+	struct ndpip_socket *ret = ndpip_hashtable_get(ndpip_established_sockets, &key, sizeof(key));
+	if (ret != NULL)
+		return ret;
 
-		return ndpip_hashtable_get(ndpip_listening_sockets, &key2, sizeof(key2));
-	}
-
-	if (protocol == IPPROTO_UDP) {
-		struct ndpip_socket *ret = ndpip_hashtable_get(ndpip_listening_sockets, &key, sizeof(key));
-		if (ret != NULL)
-			return ret;
-
-		return ndpip_hashtable_get(ndpip_established_sockets, &key2, sizeof(key2));
-	}
-
-	return NULL;
+	return ndpip_hashtable_get(ndpip_listening_sockets, &key2, sizeof(key2));
 }
 
 /*
