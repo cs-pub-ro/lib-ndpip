@@ -4,6 +4,7 @@
 #include <assert.h>
 #include <unistd.h>
 
+#include <rte_version.h>
 #include <rte_mbuf.h>
 #include <rte_ethdev.h>
 
@@ -72,6 +73,7 @@ int ndpip_linux_dpdk_register_iface(int netdev_id)
 		return -1;
 	}
 
+#if RTE_VERSION < RTE_VERSION_NUM(21, 11, 0, 0)
 	if ((&iface)->iface_dev_info.tx_offload_capa & DEV_TX_OFFLOAD_IPV4_CKSUM)
         	(&iface)->iface_conf.txmode.offloads |= DEV_TX_OFFLOAD_IPV4_CKSUM;
 
@@ -89,6 +91,25 @@ int ndpip_linux_dpdk_register_iface(int netdev_id)
 
 	if ((&iface)->iface_dev_info.rx_offload_capa & DEV_RX_OFFLOAD_UDP_CKSUM)
         	(&iface)->iface_conf.rxmode.offloads |= DEV_RX_OFFLOAD_UDP_CKSUM;
+#else 
+	if ((&iface)->iface_dev_info.tx_offload_capa & RTE_ETH_TX_OFFLOAD_IPV4_CKSUM)
+        	(&iface)->iface_conf.txmode.offloads |= RTE_ETH_TX_OFFLOAD_IPV4_CKSUM;
+
+	if ((&iface)->iface_dev_info.tx_offload_capa & RTE_ETH_TX_OFFLOAD_TCP_CKSUM)
+        	(&iface)->iface_conf.txmode.offloads |= RTE_ETH_TX_OFFLOAD_TCP_CKSUM;
+
+	if ((&iface)->iface_dev_info.tx_offload_capa & RTE_ETH_TX_OFFLOAD_UDP_CKSUM)
+        	(&iface)->iface_conf.txmode.offloads |= RTE_ETH_TX_OFFLOAD_UDP_CKSUM;
+
+	if ((&iface)->iface_dev_info.rx_offload_capa & RTE_ETH_RX_OFFLOAD_IPV4_CKSUM)
+        	(&iface)->iface_conf.rxmode.offloads |= RTE_ETH_RX_OFFLOAD_IPV4_CKSUM;
+
+	if ((&iface)->iface_dev_info.rx_offload_capa & RTE_ETH_RX_OFFLOAD_TCP_CKSUM)
+        	(&iface)->iface_conf.rxmode.offloads |= RTE_ETH_RX_OFFLOAD_TCP_CKSUM;
+
+	if ((&iface)->iface_dev_info.rx_offload_capa & RTE_ETH_RX_OFFLOAD_UDP_CKSUM)
+        	(&iface)->iface_conf.rxmode.offloads |= RTE_ETH_RX_OFFLOAD_UDP_CKSUM;
+#endif
 
 	if (rte_eth_dev_configure((&iface)->iface_netdev_id, 1, 1, &(&iface)->iface_conf) < 0) {
 		perror("rte_eth_dev_configure");
@@ -367,6 +388,7 @@ bool ndpip_linux_dpdk_iface_has_offload(struct ndpip_iface *iface, enum ndpip_if
 	struct ndpip_linux_dpdk_iface *iface_linux_dpdk = (void *) iface;
 
 	switch (off) {
+#if RTE_VERSION < RTE_VERSION_NUM(21, 11, 0, 0)
 		case NDPIP_IFACE_OFFLOAD_TX_IPV4_CSUM:
 			return iface_linux_dpdk->iface_conf.txmode.offloads & DEV_TX_OFFLOAD_IPV4_CKSUM;
 
@@ -384,6 +406,25 @@ bool ndpip_linux_dpdk_iface_has_offload(struct ndpip_iface *iface, enum ndpip_if
 
 		case NDPIP_IFACE_OFFLOAD_RX_UDPV4_CSUM:
 			return iface_linux_dpdk->iface_conf.rxmode.offloads & DEV_RX_OFFLOAD_UDP_CKSUM;
+#else
+		case NDPIP_IFACE_OFFLOAD_TX_IPV4_CSUM:
+			return iface_linux_dpdk->iface_conf.txmode.offloads & RTE_ETH_TX_OFFLOAD_IPV4_CKSUM;
+
+		case NDPIP_IFACE_OFFLOAD_TX_TCPV4_CSUM:
+			return iface_linux_dpdk->iface_conf.txmode.offloads & RTE_ETH_TX_OFFLOAD_TCP_CKSUM;
+
+		case NDPIP_IFACE_OFFLOAD_TX_UDPV4_CSUM:
+			return iface_linux_dpdk->iface_conf.txmode.offloads & RTE_ETH_TX_OFFLOAD_UDP_CKSUM;
+
+		case NDPIP_IFACE_OFFLOAD_RX_IPV4_CSUM:
+			return iface_linux_dpdk->iface_conf.rxmode.offloads & RTE_ETH_RX_OFFLOAD_IPV4_CKSUM;
+
+		case NDPIP_IFACE_OFFLOAD_RX_TCPV4_CSUM:
+			return iface_linux_dpdk->iface_conf.rxmode.offloads & RTE_ETH_RX_OFFLOAD_TCP_CKSUM;
+
+		case NDPIP_IFACE_OFFLOAD_RX_UDPV4_CSUM:
+			return iface_linux_dpdk->iface_conf.rxmode.offloads & RTE_ETH_RX_OFFLOAD_UDP_CKSUM;
+#endif
 
 		default:
 			return false;
@@ -395,6 +436,7 @@ bool ndpip_linux_dpdk_pbuf_has_flag(struct ndpip_pbuf *pb, enum ndpip_pbuf_flag 
 	struct rte_mbuf *mb = (void *) pb;
 
 	switch (flag) {
+#if RTE_VERSION < RTE_VERSION_NUM(21, 11, 0, 0)
 		case NDPIP_PBUF_F_RX_L4_CSUM_GOOD:
 			return (mb->ol_flags & PKT_RX_L4_CKSUM_MASK) == PKT_RX_L4_CKSUM_GOOD;
 
@@ -403,6 +445,16 @@ bool ndpip_linux_dpdk_pbuf_has_flag(struct ndpip_pbuf *pb, enum ndpip_pbuf_flag 
 
 		case NDPIP_PBUF_F_RX_L4_CSUM_NONE:
 			return (mb->ol_flags & PKT_RX_L4_CKSUM_MASK) == PKT_RX_L4_CKSUM_NONE;
+#else
+		case NDPIP_PBUF_F_RX_L4_CSUM_GOOD:
+			return (mb->ol_flags & RTE_MBUF_F_RX_L4_CKSUM_MASK) == RTE_MBUF_F_RX_L4_CKSUM_GOOD;
+
+		case NDPIP_PBUF_F_RX_L4_CSUM_BAD:
+			return (mb->ol_flags & RTE_MBUF_F_RX_L4_CKSUM_MASK) == RTE_MBUF_F_RX_L4_CKSUM_BAD;
+
+		case NDPIP_PBUF_F_RX_L4_CSUM_NONE:
+			return (mb->ol_flags & RTE_MBUF_F_RX_L4_CKSUM_MASK) == RTE_MBUF_F_RX_L4_CKSUM_NONE;
+#endif
 
 		default:
 			return false;
@@ -414,6 +466,7 @@ void ndpip_linux_dpdk_pbuf_set_flag(struct ndpip_pbuf *pb, enum ndpip_pbuf_flag 
 	uint64_t ol_flag;
 
 	switch (flag) {
+#if RTE_VERSION < RTE_VERSION_NUM(21, 11, 0, 0)
 		case NDPIP_PBUF_F_TX_IP_CKSUM:
 			ol_flag = PKT_TX_IP_CKSUM;
 			break;
@@ -425,7 +478,19 @@ void ndpip_linux_dpdk_pbuf_set_flag(struct ndpip_pbuf *pb, enum ndpip_pbuf_flag 
 		case NDPIP_PBUF_F_TX_IPV4:
 			ol_flag = PKT_TX_IPV4;
 			break;
+#else
+		case NDPIP_PBUF_F_TX_IP_CKSUM:
+			ol_flag = RTE_MBUF_F_TX_IP_CKSUM;
+			break;
 
+		case NDPIP_PBUF_F_TX_TCP_CKSUM:
+			ol_flag = RTE_MBUF_F_TX_TCP_CKSUM;
+			break;
+
+		case NDPIP_PBUF_F_TX_IPV4:
+			ol_flag = RTE_MBUF_F_TX_IPV4;
+			break;
+#endif
 		default:
 			return;
 	}
