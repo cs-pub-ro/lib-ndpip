@@ -445,6 +445,15 @@ bool ndpip_linux_dpdk_pbuf_has_flag(struct ndpip_pbuf *pb, enum ndpip_pbuf_flag 
 
 		case NDPIP_PBUF_F_RX_L4_CSUM_NONE:
 			return (mb->ol_flags & PKT_RX_L4_CKSUM_MASK) == PKT_RX_L4_CKSUM_NONE;
+
+		case NDPIP_PBUF_F_RX_IP_CSUM_GOOD:
+			return (mb->ol_flags & PKT_RX_IP_CKSUM_MASK) == PKT_RX_IP_CKSUM_GOOD;
+
+		case NDPIP_PBUF_F_RX_IP_CSUM_BAD:
+			return (mb->ol_flags & PKT_RX_IP_CKSUM_MASK) == PKT_RX_IP_CKSUM_BAD;
+
+		case NDPIP_PBUF_F_RX_IP_CSUM_NONE:
+			return (mb->ol_flags & PKT_RX_IP_CKSUM_MASK) == PKT_RX_IP_CKSUM_NONE;
 #else
 		case NDPIP_PBUF_F_RX_L4_CSUM_GOOD:
 			return (mb->ol_flags & RTE_MBUF_F_RX_L4_CKSUM_MASK) == RTE_MBUF_F_RX_L4_CKSUM_GOOD;
@@ -454,6 +463,15 @@ bool ndpip_linux_dpdk_pbuf_has_flag(struct ndpip_pbuf *pb, enum ndpip_pbuf_flag 
 
 		case NDPIP_PBUF_F_RX_L4_CSUM_NONE:
 			return (mb->ol_flags & RTE_MBUF_F_RX_L4_CKSUM_MASK) == RTE_MBUF_F_RX_L4_CKSUM_NONE;
+
+		case NDPIP_PBUF_F_RX_IP_CSUM_GOOD:
+			return (mb->ol_flags & RTE_MBUF_F_RX_IP_CKSUM_MASK) == RTE_MBUF_F_RX_IP_CKSUM_GOOD;
+
+		case NDPIP_PBUF_F_RX_IP_CSUM_BAD:
+			return (mb->ol_flags & RTE_MBUF_F_RX_IP_CKSUM_MASK) == RTE_MBUF_F_RX_IP_CKSUM_BAD;
+
+		case NDPIP_PBUF_F_RX_IP_CSUM_NONE:
+			return (mb->ol_flags & RTE_MBUF_F_RX_IP_CKSUM_MASK) == RTE_MBUF_F_RX_IP_CKSUM_NONE;
 #endif
 
 		default:
@@ -527,12 +545,10 @@ uint16_t ndpip_linux_dpdk_iface_get_mtu(struct ndpip_iface *iface)
 
 uint16_t ndpip_linux_dpdk_ipv4_cksum(struct iphdr *iph)
 {
-	return 0;
 	return rte_ipv4_cksum((void *) iph);
 }
 
 uint16_t ndpip_linux_dpdk_ipv4_udptcp_cksum(struct iphdr *iph, void *l4h)
 {
-	return 0;
 	return rte_ipv4_udptcp_cksum((void *) iph, l4h);
 }

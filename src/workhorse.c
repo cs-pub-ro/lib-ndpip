@@ -116,15 +116,16 @@ int ndpip_rx_thread(void *argp)
 
 			struct iphdr *iph = ndpip_pbuf_data(pb);
 
-			/*
-			if (!ndpip_iface_has_offload(iface, NDPIP_IFACE_OFFLOAD_RX_IPV4_CSUM)) {
-				uint16_t csum = iph->check;
-
-				iph->check = 0;
-				if (csum != ndpip_ipv4_cksum(iph))
+			if (ndpip_iface_has_offload(iface, NDPIP_IFACE_OFFLOAD_RX_IPV4_CSUM)) {
+				if (ndpip_pbuf_has_flag(pb, NDPIP_PBUF_F_RX_IP_CSUM_BAD))
 					goto free_pkt;
-			}
-			*/
+
+				if (ndpip_pbuf_has_flag(pb, NDPIP_PBUF_F_RX_IP_CSUM_NONE))
+					if (!ndpip_ipv4_cksum(iph))
+						goto free_pkt;
+
+			} else if (ndpip_ipv4_cksum(iph))
+				goto free_pkt;
 
 			if (!((iph->ihl == 5) && (iph->version == 4)))
 				goto free_pkt;
@@ -140,18 +141,16 @@ int ndpip_rx_thread(void *argp)
 			if (protocol == IPPROTO_TCP) {
 				struct tcphdr *th = ndpip_pbuf_data(pb);
 
-				/*
-				if (!ndpip_iface_has_offload(iface, NDPIP_IFACE_OFFLOAD_RX_TCPV4_CSUM)) {
-					uint16_t csum = th->th_sum;
-
-					th->th_sum = 0;
-					if (csum != ndpip_ipv4_udptcp_cksum(iph, th))
-						goto free_pkt;
-				} else {
+				if (ndpip_iface_has_offload(iface, NDPIP_IFACE_OFFLOAD_RX_TCPV4_CSUM)) {
 					if (ndpip_pbuf_has_flag(pb, NDPIP_PBUF_F_RX_L4_CSUM_BAD))
 						goto free_pkt;
-				}
-				*/
+
+					if (ndpip_pbuf_has_flag(pb, NDPIP_PBUF_F_RX_L4_CSUM_NONE))
+						if (!ndpip_ipv4_udptcp_cksum(iph, th))
+							goto free_pkt;
+
+				} else if (ndpip_ipv4_udptcp_cksum(iph, th))
+					goto free_pkt;
 
 				struct sockaddr_in local = {
 					.sin_family = AF_INET,
@@ -186,18 +185,16 @@ int ndpip_rx_thread(void *argp)
 			if (protocol == IPPROTO_UDP) {
 				struct udphdr *uh = ndpip_pbuf_data(pb);
 
-				/*
-				if (!ndpip_iface_has_offload(iface, NDPIP_IFACE_OFFLOAD_RX_UDPV4_CSUM)) {
-					uint16_t csum = uh->uh_sum;
-
-					uh->uh_sum = 0;
-					if (csum != ndpip_ipv4_udptcp_cksum(iph, uh))
-						goto free_pkt;
-				} else {
+				if (ndpip_iface_has_offload(iface, NDPIP_IFACE_OFFLOAD_RX_UDPV4_CSUM)) {
 					if (ndpip_pbuf_has_flag(pb, NDPIP_PBUF_F_RX_L4_CSUM_BAD))
 						goto free_pkt;
-				}
-				*/
+
+					if (ndpip_pbuf_has_flag(pb, NDPIP_PBUF_F_RX_L4_CSUM_NONE))
+						if (!ndpip_ipv4_udptcp_cksum(iph, uh))
+							goto free_pkt;
+
+				} else if (ndpip_ipv4_udptcp_cksum(iph, uh))
+					goto free_pkt;
 
 				struct sockaddr_in local = {
 					.sin_family = AF_INET,
