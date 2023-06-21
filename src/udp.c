@@ -138,7 +138,7 @@ uint16_t ndpip_udp_max_xmit(struct ndpip_udp_socket *udp_sock, struct ndpip_pbuf
 	return cnt;
 }
 
-int ndpip_udp_send_data(struct ndpip_udp_socket *udp_sock, struct ndpip_pbuf **pb, uint16_t cnt)
+int ndpip_udp_send(struct ndpip_udp_socket *udp_sock, struct ndpip_pbuf **pb, uint16_t cnt)
 {
 	struct ndpip_socket *sock = &udp_sock->socket;
 

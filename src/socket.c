@@ -115,11 +115,8 @@ struct ndpip_socket *ndpip_socket_new(int domain, int type, int protocol)
 		tcp_sock->tcp_recv_win = 0;
 		tcp_sock->tcp_max_seq = 0;
 		tcp_sock->tcp_last_ack = 0;
-		tcp_sock->tcp_good_ack = 0;
 		tcp_sock->tcp_recv_win_scale = 0;
 		tcp_sock->tcp_send_win_scale = 0;
-		tcp_sock->tcp_recovery = false;
-		tcp_sock->tcp_retransmission = false;
 		tcp_sock->tcp_rto = false;
 		tcp_sock->tcp_rsp_ack = false;
 		tcp_sock->rx_loop_seen = false;
@@ -389,10 +386,10 @@ int ndpip_send(int sockfd, struct ndpip_pbuf **pb, uint16_t count)
 	}
 
 	if (sock->protocol == IPPROTO_TCP)
-		return ndpip_tcp_send_data((struct ndpip_tcp_socket *) sock, pb, count);
+		return ndpip_tcp_send((struct ndpip_tcp_socket *) sock, pb, count);
 
 	if (sock->protocol == IPPROTO_UDP)
-		return ndpip_udp_send_data((struct ndpip_udp_socket *) sock, pb, count);
+		return ndpip_udp_send((struct ndpip_udp_socket *) sock, pb, count);
 
 	errno = EOPNOTSUPP;
 	return -1;
