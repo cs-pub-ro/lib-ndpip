@@ -340,7 +340,6 @@ int ndpip_recv(int sockfd, struct ndpip_pbuf **pb, uint16_t count)
 		struct ndpip_tcp_socket *tcp_sock = (struct ndpip_tcp_socket *) sock;
 
 		if ((tcp_sock->state != CONNECTED) &&
-			(tcp_sock->state != CLOSING) &&
 			(ndpip_ring_size(sock->recv_ring) == 0)) {
 
 			errno = EINVAL;
