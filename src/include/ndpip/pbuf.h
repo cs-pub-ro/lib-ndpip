@@ -4,7 +4,7 @@
 #include "../../include/ndpip/pbuf.h"
 
 struct ndpip_pbuf_meta {
-	uint64_t xmit_tsc;
+	struct timespec xmit_time;
 };
 
 enum ndpip_pbuf_flag {

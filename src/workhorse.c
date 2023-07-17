@@ -120,9 +120,10 @@ int ndpip_rx_thread(void *argp)
 				if (ndpip_pbuf_has_flag(pb, NDPIP_PBUF_F_RX_IP_CSUM_BAD))
 					goto free_pkt;
 
-				if (ndpip_pbuf_has_flag(pb, NDPIP_PBUF_F_RX_IP_CSUM_NONE))
+				if (ndpip_pbuf_has_flag(pb, NDPIP_PBUF_F_RX_IP_CSUM_NONE)) {
 					if (!ndpip_ipv4_cksum(iph))
 						goto free_pkt;
+				}
 
 			} else if (ndpip_ipv4_cksum(iph))
 				goto free_pkt;
@@ -145,9 +146,10 @@ int ndpip_rx_thread(void *argp)
 					if (ndpip_pbuf_has_flag(pb, NDPIP_PBUF_F_RX_L4_CSUM_BAD))
 						goto free_pkt;
 
-					if (ndpip_pbuf_has_flag(pb, NDPIP_PBUF_F_RX_L4_CSUM_NONE))
+					if (ndpip_pbuf_has_flag(pb, NDPIP_PBUF_F_RX_L4_CSUM_NONE)) {
 						if (!ndpip_ipv4_udptcp_cksum(iph, th))
 							goto free_pkt;
+					}
 
 				} else if (ndpip_ipv4_udptcp_cksum(iph, th))
 					goto free_pkt;

@@ -146,7 +146,8 @@ int ndpip_udp_send(struct ndpip_udp_socket *udp_sock, struct ndpip_pbuf **pb, ui
 	if (cnt == 0)
 		return 0;
 
-	uint64_t tsc_now = ndpip_tsc();
+	struct timespec now;
+	ndpip_time_now(&now);
 
 	for (uint16_t idx = 0; idx < cnt; idx++) {
 		uint16_t data_len = ndpip_pbuf_length(pb[idx]);
@@ -166,7 +167,7 @@ int ndpip_udp_send(struct ndpip_udp_socket *udp_sock, struct ndpip_pbuf **pb, ui
 		ndpip_udp_prepare_pbuf(udp_sock, pb[idx], iph, uh);
 
 		struct ndpip_pbuf_meta *pm = ndpip_pbuf_metadata(pb[idx]);
-		pm->xmit_tsc = tsc_now;
+		pm->xmit_time = now;
 	}
 
 	ndpip_iface_xmit(sock->iface, pb, cnt, true);

@@ -102,11 +102,6 @@ int ndpip_ring_flush(struct ndpip_ring *ring, size_t count)
 	size_t r_count = ring->ring_end - ring->ring_start;
 	r_count = r_count < count ? r_count : count;
 
-	if (r_count < count)
-		return -1;
-
-	r_count = r_count < count ? r_count : count;
-
 	ring->ring_start += r_count;
 
 	return 0;
