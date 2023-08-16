@@ -68,13 +68,12 @@ static int ndpip_ring_pop0(struct ndpip_ring *ring, size_t *count, void *buf, bo
 	if (*count == 0)
 		return 0;
 
-	size_t consumer = ring->ring_start & ring->ring_mask;
 	size_t r_count = ring->ring_end - ring->ring_start;
-
-	r_count = r_count < *count ? r_count : *count;
-
 	if (r_count == 0)
 		return -1;
+
+	r_count = r_count < *count ? r_count : *count;
+	size_t consumer = ring->ring_start & ring->ring_mask;
 
 	if (pop)
 		ring->ring_start += r_count;

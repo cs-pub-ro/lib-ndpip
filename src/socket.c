@@ -352,14 +352,9 @@ int ndpip_recv(int sockfd, struct ndpip_pbuf **pb, uint16_t count)
 		return -1;
 	}
 
-	if (ndpip_ring_size(sock->recv_ring) == 0) {
-		errno = EAGAIN;
-		return -1;
-	}
-
 	size_t rcount = count;
 	if (ndpip_ring_pop(sock->recv_ring, &rcount, pb) < 0) {
-		errno = EFAULT;
+		errno = EAGAIN;
 		return -1;
 	}
 	
