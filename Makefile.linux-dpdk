@@ -1,4 +1,4 @@
-AR ?= ar
+AR = gcc-ar
 CC ?= gcc
 PKGCONF ?= pkg-config
 PREFIX ?=
@@ -18,7 +18,7 @@ PC = ndpip.pc
 CFLAGS ?=
 CFLAGS += -O3
 #CFLAGS += -fsanitize=address
-#CFLAGS += -flto
+CFLAGS += -flto
 CFLAGS += -Wall
 CFLAGS += -Wno-address-of-packed-member
 CFLAGS += -g

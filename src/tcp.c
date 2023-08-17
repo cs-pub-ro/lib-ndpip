@@ -273,6 +273,7 @@ void ndpip_tcp_rto_handler(void *argp) {
 	struct ndpip_socket *sock = &tcp_sock->socket;
 
 	struct ndpip_pbuf *pb;
+	struct timespec expire;
 	size_t cnt = 1;
 
 	if (ndpip_ring_peek(sock->xmit_ring, &cnt, &pb) < 0)
@@ -301,7 +302,6 @@ ret_no_rto:
 	tcp_sock->tcp_rto = false;
 
 ret_rto:
-	struct timespec expire;
 	ndpip_time_now(&expire);
 	ndpip_timespec_add(&expire, NDPIP_TODO_TCP_RETRANSMIT_TIMEOUT);
 	ndpip_timer_arm(tcp_sock->timer_rto, &expire);
