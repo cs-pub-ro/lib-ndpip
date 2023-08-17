@@ -38,6 +38,7 @@ static uint16_t ndpip_tcp_max_xmit(struct ndpip_tcp_socket *tcp_sock, struct ndp
 
 static void ndpip_tcp_prepare_pbuf(struct ndpip_tcp_socket *tcp_sock, struct ndpip_pbuf *pb, struct iphdr *iph, struct tcphdr *th)
 {
+#ifndef NDPIP_DEBUG_NO_CKSUM
 	struct ndpip_socket *sock = &tcp_sock->socket;
 
 	ndpip_pbuf_set_l2_len(pb, sizeof(struct ethhdr));
@@ -56,6 +57,7 @@ static void ndpip_tcp_prepare_pbuf(struct ndpip_tcp_socket *tcp_sock, struct ndp
 		th->th_sum = 0;
 		th->th_sum = ndpip_ipv4_udptcp_cksum(iph, th);
 	}
+#endif
 }
 
 struct ndpip_tcp_socket *ndpip_tcp_accept(struct ndpip_tcp_socket *tcp_sock)

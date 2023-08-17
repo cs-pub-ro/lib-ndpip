@@ -179,6 +179,7 @@ int ndpip_udp_send(struct ndpip_udp_socket *udp_sock, struct ndpip_pbuf **pb, ui
 
 static void ndpip_udp_prepare_pbuf(struct ndpip_udp_socket *udp_sock, struct ndpip_pbuf *pb, struct iphdr *iph, struct udphdr *uh)
 {
+#ifndef NDPIP_DEBUG_NO_CKSUM
 	struct ndpip_socket *sock = &udp_sock->socket;
 
 	ndpip_pbuf_set_l2_len(pb, sizeof(struct ethhdr));
@@ -197,4 +198,5 @@ static void ndpip_udp_prepare_pbuf(struct ndpip_udp_socket *udp_sock, struct ndp
 		uh->uh_sum = 0;
 		uh->uh_sum = ndpip_ipv4_udptcp_cksum(iph, uh);
 	}
+#endif
 }

@@ -116,6 +116,7 @@ int ndpip_rx_thread(void *argp)
 
 			struct iphdr *iph = ndpip_pbuf_data(pb);
 
+#ifndef NDPIP_DEBUG_NO_CKSUM
 			if (ndpip_iface_has_offload(iface, NDPIP_IFACE_OFFLOAD_RX_IPV4_CSUM)) {
 				if (ndpip_pbuf_has_flag(pb, NDPIP_PBUF_F_RX_IP_CSUM_BAD))
 					goto free_pkt;
@@ -127,6 +128,7 @@ int ndpip_rx_thread(void *argp)
 
 			} else if (ndpip_ipv4_cksum(iph))
 				goto free_pkt;
+#endif
 
 			if (!((iph->ihl == 5) && (iph->version == 4)))
 				goto free_pkt;
@@ -142,6 +144,7 @@ int ndpip_rx_thread(void *argp)
 			if (protocol == IPPROTO_TCP) {
 				struct tcphdr *th = ndpip_pbuf_data(pb);
 
+#ifndef NDPIP_DEBUG_NO_CKSUM
 				if (ndpip_iface_has_offload(iface, NDPIP_IFACE_OFFLOAD_RX_TCPV4_CSUM)) {
 					if (ndpip_pbuf_has_flag(pb, NDPIP_PBUF_F_RX_L4_CSUM_BAD))
 						goto free_pkt;
@@ -153,6 +156,7 @@ int ndpip_rx_thread(void *argp)
 
 				} else if (ndpip_ipv4_udptcp_cksum(iph, th))
 					goto free_pkt;
+#endif
 
 				struct sockaddr_in local = {
 					.sin_family = AF_INET,
@@ -187,6 +191,7 @@ int ndpip_rx_thread(void *argp)
 			if (protocol == IPPROTO_UDP) {
 				struct udphdr *uh = ndpip_pbuf_data(pb);
 
+#ifndef NDPIP_DEBUG_NO_CKSUM
 				if (ndpip_iface_has_offload(iface, NDPIP_IFACE_OFFLOAD_RX_UDPV4_CSUM)) {
 					if (ndpip_pbuf_has_flag(pb, NDPIP_PBUF_F_RX_L4_CSUM_BAD))
 						goto free_pkt;
@@ -197,6 +202,7 @@ int ndpip_rx_thread(void *argp)
 
 				} else if (ndpip_ipv4_udptcp_cksum(iph, uh))
 					goto free_pkt;
+#endif
 
 				struct sockaddr_in local = {
 					.sin_family = AF_INET,
