@@ -5,6 +5,7 @@
 
 struct ndpip_pbuf_meta {
 	struct timespec xmit_time;
+	uint32_t tcp_ack;
 };
 
 enum ndpip_pbuf_flag {

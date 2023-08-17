@@ -223,6 +223,8 @@ static int ndpip_tcp_build_meta(struct ndpip_tcp_socket *tcp_sock, uint8_t flags
 	if (flags != TH_ACK)
 		tcp_sock->tcp_seq++;
 
+	ndpip_pbuf_metadata(pb)->tcp_ack = tcp_sock->tcp_seq;
+
 	return 0;
 }
 
@@ -520,6 +522,8 @@ int ndpip_tcp_send(struct ndpip_tcp_socket *tcp_sock, struct ndpip_pbuf **pb, ui
 
 		sock->grants -= sock->grants_overhead + ndpip_pbuf_length(pb[idx]);
 
+		ndpip_pbuf_metadata(pb[idx])->tcp_ack = tcp_sock->tcp_seq;
+
 		if (ndpip_log_grants) {
 			ndpip_log_grants_tcp[ndpip_log_grants_tcp_idx][0] = sock->grants;
 			ndpip_log_grants_tcp[ndpip_log_grants_tcp_idx][1] = ndpip_pbuf_length(pb[idx]) + sock->grants_overhead;
@@ -595,23 +599,7 @@ static void ndpip_tcp_free_acked(struct ndpip_tcp_socket *tcp_sock)
 		size_t cnt = 1;
 
 		ndpip_ring_peek(sock->xmit_ring, &cnt, &pb);
-		struct iphdr *iph = ndpip_pbuf_data(pb) + sizeof(struct ethhdr);
-		struct tcphdr *th = ((void *) iph) + (iph->ihl << 2);
-
-		uint32_t data_len = ntohs(iph->tot_len) - (iph->ihl << 2) - (th->th_off << 2);
-		uint32_t ack_inc;
-
-		if (data_len == 0) {
-			if (th->th_flags != TH_ACK)
-				ack_inc = 1;
-			else
-				ack_inc = 0;
-		} else
-			ack_inc = data_len;
-
-		uint32_t tcp_ack = ntohl(th->th_seq) + ack_inc;
-
-		if (tcp_ack <= tcp_sock->tcp_last_ack) {
+		if (ndpip_pbuf_metadata(pb)->tcp_ack <= tcp_sock->tcp_last_ack) {
 			free_pbs[idx] = pb;
 			ndpip_ring_flush(sock->xmit_ring, 1);
 		} else
