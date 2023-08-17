@@ -773,10 +773,10 @@ int ndpip_tcp_feed(struct ndpip_tcp_socket *tcp_sock, struct sockaddr_in *remote
 		}
 
 		if (data_len == 0) {
-			if (th_flags == TH_ACK)
-				return 0;
-			else
+			if (th_flags != TH_ACK)
 				goto err;
+
+			return 0;
 		}
 
 		tcp_sock->tcp_rsp_ack = true;
@@ -793,19 +793,20 @@ int ndpip_tcp_feed(struct ndpip_tcp_socket *tcp_sock, struct sockaddr_in *remote
 
 		if (th_flags != TH_ACK)
 			goto err;
+
+		return 0;
 	}
 
 	if (tcp_sock->state == LAST_ACK) {
 		if (data_len != 0)
 			goto err;
 
-		if (th_flags == TH_ACK) {
-			tcp_sock->state = CLOSED;
-			ndpip_tcp_close_established(tcp_sock);
-
-			return 0;
-		} else
+		if (th_flags != TH_ACK)
 			goto err;
+
+		tcp_sock->state = CLOSED;
+		ndpip_tcp_close_established(tcp_sock);
+		return 0;
 	}
 
 	if (tcp_sock->state == FIN_WAIT_1) {
@@ -836,22 +837,23 @@ int ndpip_tcp_feed(struct ndpip_tcp_socket *tcp_sock, struct sockaddr_in *remote
 		if (data_len != 0)
 			goto err;
 
-		if (th_flags == TH_FIN) {
-			tcp_sock->tcp_rsp_ack = true;
-			tcp_sock->state = TIME_WAIT;
-			return 0;
-		} else
+		if (th_flags != TH_FIN)
 			goto err;
+
+		tcp_sock->tcp_rsp_ack = true;
+		tcp_sock->state = TIME_WAIT;
+		return 0;
 	}
 
 	if (tcp_sock->state == CLOSING) {
 		if (data_len != 0)
 			goto err;
 
-		if (th_flags == TH_ACK) {
-			tcp_sock->state = TIME_WAIT;
-			return 0;
-		}
+		if (th_flags != TH_ACK)
+			goto err;
+
+		tcp_sock->state = TIME_WAIT;
+		return 0;
 	}
 
 err:

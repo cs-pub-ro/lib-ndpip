@@ -17,14 +17,11 @@ PC = ndpip.pc
 
 CFLAGS ?=
 CFLAGS += -O3
-#CFLAGS += -fsanitize=address
-CFLAGS += -flto
 CFLAGS += -Wall
 CFLAGS += -Wno-address-of-packed-member
 CFLAGS += -g
 CFLAGS += -std=gnu17
 CFLAGS += -DNDPIP_LINUX_DPDK
-CFLAGS += -DNDPIP_DEBUG_NO_CKSUM
 CFLAGS += -Isrc/include
 
 CFLAGS += $(shell $(PKGCONF) --cflags libdpdk)
