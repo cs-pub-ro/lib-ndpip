@@ -71,14 +71,14 @@ bool ndpip_linux_dpdk_iface_rx_thread_running(struct ndpip_iface *iface);
 bool ndpip_linux_dpdk_iface_timers_thread_running(struct ndpip_iface *iface);
 
 struct ndpip_pbuf_meta *ndpip_linux_dpdk_pbuf_metadata(struct ndpip_pbuf *pbuf);
+struct ndpip_pbuf *ndpip_linux_dpdk_pbuf_copy(struct ndpip_pbuf *pb, struct ndpip_pbuf_pool *pool, uint32_t offset, uint32_t length);
 bool ndpip_linux_dpdk_pbuf_has_flag(struct ndpip_pbuf *pb, enum ndpip_pbuf_flag flag);
 void ndpip_linux_dpdk_pbuf_set_flag(struct ndpip_pbuf *pb, enum ndpip_pbuf_flag flag, bool val);
 void ndpip_linux_dpdk_pbuf_set_l2_len(struct ndpip_pbuf *pb,uint16_t val);
 void ndpip_linux_dpdk_pbuf_set_l3_len(struct ndpip_pbuf *pb,uint16_t val);
+void ndpip_linux_dpdk_pbuf_refcount_add(struct ndpip_pbuf *pb, int16_t val);
 
 uint16_t ndpip_linux_dpdk_iface_get_burst_size(struct ndpip_iface *iface);
-
-void ndpip_linux_dpdk_pbuf_refcount_add(struct ndpip_pbuf *pb, int16_t val);
 
 void *ndpip_linux_dpdk_timers_thread(void *argp);
 
@@ -112,6 +112,7 @@ uint16_t ndpip_linux_dpdk_ipv4_udptcp_cksum(struct iphdr *iph, void *l4h);
 #define ndpip_pbuf_refcount_add ndpip_linux_dpdk_pbuf_refcount_add
 #define ndpip_pbuf_refcount_sub ndpip_linux_dpdk_pbuf_refcount_sub
 #define ndpip_pbuf_refcount_set ndpip_linux_dpdk_pbuf_refcount_set
+#define ndpip_pbuf_copy ndpip_linux_dpdk_pbuf_copy
 
 #define ndpip_pbuf_pool_alloc ndpip_linux_dpdk_pbuf_pool_alloc
 #define ndpip_pbuf_pool_request ndpip_linux_dpdk_pbuf_pool_request

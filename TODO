@@ -1,0 +1,4 @@
+TODO: Add a poll API.
+TODO: Make sure tcp_send errs on input pbufs that are large than MSS. Also provide an API to probe the MSS.
+TODO: Eliminate race conditions between RX and TX threads. For example over rto_timer.
+TODO: On the RX side when receiving smaller that MSS segments move them to a malloc-based allocator and push them to the application.

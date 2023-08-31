@@ -552,3 +552,11 @@ uint16_t ndpip_linux_dpdk_ipv4_udptcp_cksum(struct iphdr *iph, void *l4h)
 {
 	return rte_ipv4_udptcp_cksum((void *) iph, l4h);
 }
+
+struct ndpip_pbuf *ndpip_linux_dpdk_pbuf_copy(struct ndpip_pbuf *pb, struct ndpip_pbuf_pool *pool, uint32_t offset, uint32_t length)
+{
+	struct rte_mbuf *m = (void *) pb;
+	struct rte_mempool *p = (void *) pool;
+
+	return (void *) rte_pktmbuf_copy(m, p, offset, length);
+}

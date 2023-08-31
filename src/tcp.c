@@ -34,7 +34,6 @@ static int ndpip_tcp_build_xmit_template(struct ndpip_tcp_socket *tcp_sock);
 static int ndpip_tcp_build_meta(struct ndpip_tcp_socket *tcp_sock, uint8_t flags, struct ndpip_pbuf *pb);
 static int ndpip_tcp_build_syn(struct ndpip_tcp_socket *tcp_sock, bool ack, struct ndpip_pbuf *pb);
 static void ndpip_tcp_parse_opts(struct ndpip_tcp_socket *sock, struct tcphdr *th, uint16_t th_hlen);
-static uint16_t ndpip_tcp_max_xmit(struct ndpip_tcp_socket *tcp_sock, struct ndpip_pbuf **pb, uint16_t cnt);
 
 static void ndpip_tcp_prepare_pbuf(struct ndpip_tcp_socket *tcp_sock, struct ndpip_pbuf *pb, struct iphdr *iph, struct tcphdr *th)
 {
@@ -325,58 +324,6 @@ static void ndpip_tcp_parse_opts(struct ndpip_tcp_socket *sock, struct tcphdr *t
 	}
 }
 
-static uint16_t ndpip_tcp_max_xmit(struct ndpip_tcp_socket *tcp_sock, struct ndpip_pbuf **pb, uint16_t cnt)
-{
-	struct ndpip_socket *sock = &tcp_sock->socket;
-
-	{
-		static size_t xmit_ring_size_sum = 0;
-		static size_t xmit_ring_size_iter = 0;
-
-		xmit_ring_size_sum += ndpip_ring_size(sock->xmit_ring);
-		xmit_ring_size_iter++;
-
-		if (xmit_ring_size_iter > 1000000000UL) {
-			xmit_ring_size_sum = 0;
-			xmit_ring_size_iter = 0;
-			printf("TCP-max_xmit: xmit_ring_size_sum=%lu;\n", xmit_ring_size_sum);
-		}
-	}
-
-	if (cnt == 0)
-		return 0;
-
-	/*
-	if (sock->grants_overhead < 0)
-		return 0;
-		*/
-
-	if (tcp_sock->tcp_rto)
-		return 0;
-
-	uint16_t burst_size = ndpip_iface_get_burst_size(sock->iface);
-	cnt = cnt < burst_size ? cnt : burst_size;
-
-	uint32_t tmp_left = tcp_sock->tcp_max_seq - tcp_sock->tcp_seq;
-	int64_t data_left = tmp_left;
-	int64_t grants_left = sock->grants;
-
-	for (uint16_t idx = 0; idx < cnt; idx++) {
-		data_left -= ndpip_pbuf_length(pb[idx]);
-		grants_left -= sock->grants_overhead + sizeof(struct ethhdr) + sizeof(struct iphdr) + sizeof(struct tcphdr) + ndpip_pbuf_length(pb[idx]);
-
-		if (data_left < 0)
-			return idx;
-
-		/*
-		if (grants_left < -17000)
-			return idx;
-			*/
-	}
-
-	return cnt;
-}
-
 static void ndpip_tcp_close_established(struct ndpip_tcp_socket *tcp_sock)
 {
 	struct ndpip_established_key key = {
@@ -458,9 +405,53 @@ int ndpip_tcp_close(struct ndpip_tcp_socket *tcp_sock)
 	return 0;
 }
 
-int ndpip_tcp_send(struct ndpip_tcp_socket *tcp_sock, struct ndpip_pbuf **pb, uint16_t cnt)
+void ndpip_tcp_prepare_send(struct ndpip_tcp_socket *tcp_sock, struct ndpip_pbuf *pb)
 {
 	struct ndpip_socket *sock = &tcp_sock->socket;
+
+	uint16_t data_len = ndpip_pbuf_length(pb);
+
+	ndpip_pbuf_offset(pb, sizeof(tcp_sock->xmit_template));
+	memcpy(ndpip_pbuf_data(pb), tcp_sock->xmit_template, sizeof(tcp_sock->xmit_template));
+
+	struct iphdr *iph = ndpip_pbuf_data(pb) + sizeof(struct ethhdr);
+	struct tcphdr *th = (void *) (iph + 1);
+
+	uint16_t tot_len = sizeof(struct iphdr) + sizeof(struct tcphdr) + data_len;
+	iph->tot_len = htons(tot_len);
+
+	th->th_seq = htonl(tcp_sock->tcp_seq);
+	th->th_ack = htonl(tcp_sock->tcp_ack);
+	th->th_flags = TH_ACK;
+
+	ndpip_tcp_prepare_pbuf(tcp_sock, pb, iph, th);
+
+	tcp_sock->tcp_seq += data_len;
+
+	sock->grants -= sock->grants_overhead + ndpip_pbuf_length(pb);
+
+	ndpip_pbuf_metadata(pb)->data_len = data_len;
+
+	if (ndpip_log_grants) {
+		ndpip_log_grants_tcp[ndpip_log_grants_tcp_idx][0] = sock->grants;
+		ndpip_log_grants_tcp[ndpip_log_grants_tcp_idx][1] = ndpip_pbuf_length(pb) + sock->grants_overhead;
+		ndpip_log_grants_tcp[ndpip_log_grants_tcp_idx][2] = 1;
+
+		ndpip_log_grants_tcp_idx++;
+	}
+}
+
+int ndpip_tcp_send(struct ndpip_tcp_socket *tcp_sock, struct ndpip_pbuf **pb, uint16_t cnt)
+{
+	if (cnt == 0)
+		return 0;
+
+	struct ndpip_socket *sock = &tcp_sock->socket;
+
+	/*
+	if (sock->grants_overhead < 0)
+		return 0;
+	*/
 
 	/*
 	{
@@ -486,10 +477,15 @@ int ndpip_tcp_send(struct ndpip_tcp_socket *tcp_sock, struct ndpip_pbuf **pb, ui
 		return -1;
 	}
 
-	cnt = ndpip_tcp_max_xmit(tcp_sock, pb, cnt);
-
-	if (cnt == 0)
+	if (tcp_sock->tcp_rto)
 		return 0;
+
+	int64_t data_left = (uint32_t) (tcp_sock->tcp_max_seq - tcp_sock->tcp_seq);
+	if ((sock->grants == 0) || (data_left == 0))
+		return 0;
+
+	uint16_t burst_size = ndpip_iface_get_burst_size(sock->iface);
+	cnt = cnt < burst_size ? cnt : burst_size;
 
 	if (!ndpip_timer_armed(tcp_sock->timer_rto)) {
 		struct timespec expire;
@@ -498,37 +494,39 @@ int ndpip_tcp_send(struct ndpip_tcp_socket *tcp_sock, struct ndpip_pbuf **pb, ui
 		ndpip_timer_arm(tcp_sock->timer_rto, &expire);
 	}
 
-	for (uint16_t idx = 0; idx < cnt; idx++) {
-		uint16_t data_len = ndpip_pbuf_length(pb[idx]);
+	uint16_t idx;
+	for (idx = 0; (idx < cnt) && (data_left > 0) && (sock->grants > 0); idx++) {
+		int64_t data_left_tmp = data_left - ndpip_pbuf_length(pb[idx]);
+		int64_t grants_left_tmp = sock->grants - (
+				sock->grants_overhead + sizeof(struct ethhdr) +
+				sizeof(struct iphdr) + sizeof(struct tcphdr) +
+				ndpip_pbuf_length(pb[idx]));
 
-		ndpip_pbuf_offset(pb[idx], sizeof(tcp_sock->xmit_template));
-		memcpy(ndpip_pbuf_data(pb[idx]), tcp_sock->xmit_template, sizeof(tcp_sock->xmit_template));
+		if ((grants_left_tmp < 0) || (data_left_tmp < 0))
+			break;
 
-		struct iphdr *iph = ndpip_pbuf_data(pb[idx]) + sizeof(struct ethhdr);
-		struct tcphdr *th = (void *) (iph + 1);
+		ndpip_tcp_prepare_send(tcp_sock, pb[idx]);
+		data_left = data_left_tmp;
+	}
 
-		uint16_t tot_len = sizeof(struct iphdr) + sizeof(struct tcphdr) + data_len;
-		iph->tot_len = htons(tot_len);
+	struct ndpip_pbuf *split_pb = NULL;
+	int64_t grants_left_tmp = sock->grants - (
+			sock->grants_overhead + sizeof(struct ethhdr) +
+			sizeof(struct iphdr) + sizeof(struct tcphdr));
 
-		th->th_seq = htonl(tcp_sock->tcp_seq);
-		th->th_ack = htonl(tcp_sock->tcp_ack);
-		th->th_flags = TH_ACK;
+	if ((idx != cnt) && (data_left != 0) && (grants_left_tmp != 0)) {
+		int64_t seg_len = data_left < grants_left_tmp ? data_left : grants_left_tmp;
 
-		ndpip_tcp_prepare_pbuf(tcp_sock, pb[idx], iph, th);
+		split_pb = ndpip_pbuf_copy(pb[idx], ndpip_iface_get_pbuf_pool_tx(sock->iface), 0, seg_len);
+		ndpip_tcp_prepare_send(tcp_sock, split_pb);
+		ndpip_pbuf_offset(pb[idx], -seg_len);
 
-		tcp_sock->tcp_seq += data_len;
+		cnt = idx + 1;
 
-		sock->grants -= sock->grants_overhead + ndpip_pbuf_length(pb[idx]);
-
-		ndpip_pbuf_metadata(pb[idx])->data_len = data_len;
-
-		if (ndpip_log_grants) {
-			ndpip_log_grants_tcp[ndpip_log_grants_tcp_idx][0] = sock->grants;
-			ndpip_log_grants_tcp[ndpip_log_grants_tcp_idx][1] = ndpip_pbuf_length(pb[idx]) + sock->grants_overhead;
-			ndpip_log_grants_tcp[ndpip_log_grants_tcp_idx][2] = 1;
-
-			ndpip_log_grants_tcp_idx++;
-		}
+		struct ndpip_pbuf **pb2 = malloc(sizeof(struct ndpip_bpuf *) * cnt);
+		memcpy(pb2, pb, sizeof(struct ndpip_pbuf *) * cnt);
+		pb = pb2;
+		pb[idx] = split_pb;
 	}
 
 	ndpip_ring_push(sock->xmit_ring, pb, cnt);
@@ -536,7 +534,7 @@ int ndpip_tcp_send(struct ndpip_tcp_socket *tcp_sock, struct ndpip_pbuf **pb, ui
 
 	//printf("TCP-send: xmit_ring_size=%lu;\n", ndpip_ring_size(sock->xmit_ring));
 
-	return cnt;
+	return idx;
 }
 
 static int ndpip_tcp_send_one(struct ndpip_tcp_socket *tcp_sock, struct ndpip_pbuf *pb)
