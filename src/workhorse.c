@@ -235,7 +235,7 @@ free_pkt:
 			struct ndpip_socket *reply_socket = &reply_tcp_socket->socket;
 			struct ndpip_pbuf *reply = replies[replies_len];
 
-			int r = ndpip_tcp_feed(reply_tcp_socket, NULL, NULL, reply);
+			int r = ndpip_tcp_feed_flush(reply_tcp_socket, reply);
 			if (r == 1) {
 				reply_socket->grants -= ndpip_pbuf_length(reply) + reply_socket->grants_overhead;
 				replies_len++;

@@ -120,6 +120,7 @@ struct ndpip_socket *ndpip_socket_new(int domain, int type, int protocol)
 		tcp_sock->tcp_rto = false;
 		tcp_sock->tcp_rsp_ack = false;
 		tcp_sock->rx_loop_seen = false;
+		tcp_sock->tcp_can_free = 0;
 
 		tcp_sock->accept_queue = (struct ndpip_list_head) { &tcp_sock->accept_queue, &tcp_sock->accept_queue };
 	}
