@@ -151,9 +151,17 @@ bool ndpip_timer_expired(struct ndpip_timer *timer)
 	return false;
 }
 
-void ndpip_timer_arm(struct ndpip_timer *timer, struct timespec *timeout)
+void ndpip_timer_arm_after(struct ndpip_timer *timer, struct timespec after)
 {
-	timer->timeout = *timeout;
+	struct timespec expire;
+	ndpip_time_now(&expire);
+	ndpip_timespec_add(&expire, after);
+	ndpip_timer_arm(timer, expire);
+}
+
+void ndpip_timer_arm(struct ndpip_timer *timer, struct timespec timeout)
+{
+	timer->timeout = timeout;
 	timer->armed = true;
 }
 

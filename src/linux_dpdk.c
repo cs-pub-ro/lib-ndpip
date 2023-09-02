@@ -179,6 +179,13 @@ int ndpip_linux_dpdk_iface_xmit(struct ndpip_iface *iface, struct ndpip_pbuf **p
 		uint16_t cnt2 = cnt - idx;
 		cnt2 = max_burst < cnt2 ? max_burst : cnt2;
 
+		/*
+		printf("tcp.seq=[");
+		for (uint16_t idx = 0; idx < cnt; idx++)
+			printf("%u ", ntohl(((struct tcphdr *) (ndpip_pbuf_data(pb[idx]) + sizeof(struct ethhdr) + sizeof(struct iphdr)))->th_seq));
+		printf("];\n");
+		*/
+
 		idx += rte_eth_tx_burst(
 			iface_linux_dpdk->iface_netdev_id,
 			iface_linux_dpdk->iface_tx_queue_id,
@@ -361,7 +368,7 @@ uint64_t ndpip_linux_dpdk_tsc()
 void ndpip_linux_dpdk_tsc2time(uint64_t cycles, struct timespec *req)
 {
 	req->tv_sec = cycles / tsc_hz;
-	req->tv_nsec = (cycles % tsc_hz) * 1000000000UL / tsc_hz;
+	req->tv_nsec = (cycles % tsc_hz) * NDPIP_NSEC_IN_SEC / tsc_hz;
 }
 
 void ndpip_linux_dpdk_time_now(struct timespec *req)

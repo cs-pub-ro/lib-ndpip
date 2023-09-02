@@ -51,6 +51,22 @@ int ndpip_rx_thread(void *argp)
 
 		int r = ndpip_iface_rx_burst(iface, (void *) pkts, &pkt_cnt);
 
+		if (iter++ >= 50000UL) {
+			struct timespec now;
+                        ndpip_time_now(&now);
+
+                        uint64_t delta = (now.tv_sec - before.tv_sec) * NDPIP_NSEC_IN_SEC + (now.tv_nsec - before.tv_nsec);
+			if (delta > NDPIP_NSEC_IN_SEC) {
+				if (pkt_cnt_a != 0)
+					printf("avg_burst=%lf; avg_replies=%lf; pps=%lf;\n", ((double) pkt_cnt_a) / iter, ((double) replies_len_a) / iter, ((double) pkt_cnt_a) * NDPIP_NSEC_IN_SEC / delta);
+
+				replies_len_a = 0;
+				pkt_cnt_a = 0;
+				iter = 0;
+				before = now;
+			}
+		}
+
 		if ((r < 0) || (pkt_cnt == 0))
 			continue;
 
@@ -182,14 +198,13 @@ int ndpip_rx_thread(void *argp)
 				if (r == 1)
 					replies_len++;
 
-				if (r == 2) {
-					if (!tcp_sock->rx_loop_seen) {
-						reply_sockets[reply_sockets_len++] = tcp_sock;
-						tcp_sock->rx_loop_seen = true;
-					}
-
-					continue;
+				if (!tcp_sock->rx_loop_seen) {
+					reply_sockets[reply_sockets_len++] = tcp_sock;
+					tcp_sock->rx_loop_seen = true;
 				}
+
+				if (r == 2)
+					continue;
 			}
 
 			if (protocol == IPPROTO_UDP) {
@@ -236,15 +251,14 @@ free_pkt:
 
 		for (uint16_t idx = 0; idx < reply_sockets_len; idx++) {
 			struct ndpip_tcp_socket *reply_tcp_socket = reply_sockets[idx];
-			struct ndpip_socket *reply_socket = &reply_tcp_socket->socket;
 			struct ndpip_pbuf *reply = replies[replies_len];
 
-			int r = ndpip_tcp_feed_flush(reply_tcp_socket, reply);
+			int r = ndpip_tcp_flush(reply_tcp_socket, reply);
 			if (r == 1) {
 				replies_len++;
 
 #ifdef NDPIP_GRANTS_ENABLE
-				reply_socket->grants -= ndpip_pbuf_length(reply) + reply_socket->grants_overhead;
+				reply_socket_socket->socket.grants -= ndpip_pbuf_length(reply) + reply_socket->grants_overhead;
 				/*
 				if (ndpip_log_grants) {
 					ndpip_log_grants_idx++;
@@ -266,20 +280,6 @@ free_pkt:
 
 		replies_len_a += replies_len;
 		pkt_cnt_a += pkt_cnt;
-		iter++;
-
-		if (iter >= 50000UL) {
-			struct timespec now;
-                        ndpip_time_now(&now);
-
-                        uint64_t delta = (now.tv_sec - before.tv_sec) * 1000000000UL + (now.tv_nsec - before.tv_nsec);
-
-			printf("avg_burst=%lu; avg_replies=%lu; pps=%lu;\n", pkt_cnt_a / iter, replies_len_a / iter, pkt_cnt_a * 1000000000 / delta);
-			replies_len_a = 0;
-			pkt_cnt_a = 0;
-			iter = 0;
-			before = now;
-		}
 
 		ndpip_thread_yield();
 	}

@@ -109,9 +109,7 @@ struct ndpip_socket *ndpip_socket_new(int domain, int type, int protocol)
 		tcp_sock->state = NEW;
 
 		tcp_sock->timer_rto = ndpip_timer_alloc(ndpip_tcp_rto_handler, (void *) sock);
-		struct timespec expire;
-		ndpip_time_now(&expire);
-		ndpip_timer_arm(tcp_sock->timer_rto, &expire);
+		ndpip_timer_disarm(tcp_sock->timer_rto);
 		ndpip_timers_add(tcp_sock->timer_rto);
 
 		tcp_sock->tcp_seq = 0;
@@ -433,6 +431,21 @@ int ndpip_alloc(int sockfd, struct ndpip_pbuf **pb, uint16_t len) {
 }
 
 #ifdef NDPIP_GRANTS_ENABLE
+uint16_t ndpip_socket_pbuf_cost(struct ndpip_socket *sock, struct ndpip_pbuf *pb)
+{
+	uint16_t transport_overhead = 0;
+	if (sock->protocol == IPPROTO_TCP)
+		transport_overhead = sizeof(struct tcphdr);
+
+	if (sock->protocol == IPPROTO_UDP)
+		transport_overhead = sizeof(struct udphdr);
+
+	if (pb == NULL)
+		return sock->grants_overhead + sizeof(struct ethhdr) + sizeof(struct iphdr) + transport_overhead;
+
+	return sock->grants_overhead + sizeof(struct ethhdr) + sizeof(struct iphdr) + transport_overhead + ndpip_pbuf_length(pb);
+}
+
 int ndpip_cost(int sockfd, struct ndpip_pbuf **pb, uint16_t len, uint16_t *pb_cost) {
 	if (sockfd < 0) {
 		errno = EBADF;
@@ -451,14 +464,7 @@ int ndpip_cost(int sockfd, struct ndpip_pbuf **pb, uint16_t len, uint16_t *pb_co
 	}
 
 	for (uint16_t idx = 0; idx < len; idx++) {
-		uint16_t transport_overhead = 0;
-		if (sock->protocol == IPPROTO_TCP)
-			transport_overhead = sizeof(struct tcphdr);
-
-		if (sock->protocol == IPPROTO_UDP)
-			transport_overhead = sizeof(struct udphdr);
-
-		pb_cost[idx] = sock->grants_overhead + sizeof(struct ethhdr) + sizeof(struct iphdr) + transport_overhead + ndpip_pbuf_length(pb[idx]);
+		pb_cost[idx] = ndpip_socket_pbuf_cost(sock, pb[idx]);
 	}
 
 	return 0;

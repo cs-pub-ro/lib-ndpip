@@ -67,6 +67,7 @@ int ndpip_sock_alloc(struct ndpip_socket *sock, struct ndpip_pbuf **pb, uint16_t
 struct ndpip_socket *ndpip_socket_get_by_peer(struct sockaddr_in *local, struct sockaddr_in *remote, int protocol);
 #ifdef NDPIP_GRANTS_ENABLE
 int ndpip_socket_grants_get(struct ndpip_socket *sock, uint32_t grants);
+uint16_t ndpip_socket_pbuf_cost(struct ndpip_socket *sock, struct ndpip_pbuf *pb);
 #endif
 
 extern struct ndpip_socket **socket_table;

@@ -83,7 +83,8 @@ void ndpip_list_del(struct ndpip_list_head *entry);
 typedef void (*ndpip_timer_callback_t)(void *argp);
 
 struct ndpip_timer *ndpip_timer_alloc(ndpip_timer_callback_t cb, void *argp);
-void ndpip_timer_arm(struct ndpip_timer *timer, struct timespec *timeout);
+void ndpip_timer_arm(struct ndpip_timer *timer, struct timespec timeout);
+void ndpip_timer_arm_after(struct ndpip_timer *timer, struct timespec after);
 bool ndpip_timer_armed(struct ndpip_timer *timer);
 bool ndpip_timer_expired(struct ndpip_timer *timer);
 void ndpip_timer_disarm(struct ndpip_timer *timer);
