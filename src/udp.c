@@ -10,7 +10,9 @@
 #include <netinet/udp.h>
 
 
+#ifndef NDPIP_DEBUG_NO_CKSUM
 static void ndpip_udp_prepare_pbuf(struct ndpip_udp_socket *tcp_sock, struct ndpip_pbuf *pb, struct iphdr *iph, struct udphdr *uh);
+#endif
 
 int ndpip_udp_close(struct ndpip_udp_socket *udp_sock)
 {
@@ -119,21 +121,24 @@ uint16_t ndpip_udp_max_xmit(struct ndpip_udp_socket *udp_sock, struct ndpip_pbuf
 	if (cnt == 0)
 		return 0;
 
+#ifdef NDPIP_GRANTS_ENABLE
 	if (sock->grants_overhead < 0)
 		return 0;
+#endif
 
 	uint16_t burst_size = ndpip_iface_get_burst_size(sock->iface);
 	cnt = cnt < burst_size ? cnt : burst_size;
+
+#ifdef NDPIP_GRANTS_ENABLE
 	int64_t grants_left = sock->grants;
 
 	for (uint16_t idx = 0; idx < cnt; idx++) {
 		grants_left -= sock->grants_overhead + sizeof(struct ethhdr) + sizeof(struct iphdr) + sizeof(struct udphdr) + ndpip_pbuf_length(pb[idx]);
 
-		/*
 		if (grants_left < 0)
 			return idx;
-			*/
 	}
+#endif
 
 	return cnt;
 }
@@ -162,9 +167,13 @@ int ndpip_udp_send(struct ndpip_udp_socket *udp_sock, struct ndpip_pbuf **pb, ui
 		iph->tot_len = htons(tot_len);
 		uh->uh_ulen = htons(sizeof(struct udphdr) + data_len);
 
-		//sock->grants -= sock->grants_overhead + ndpip_pbuf_length(pb[idx]);
+#ifdef NDPIP_GRANTS_ENABLE
+		sock->grants -= sock->grants_overhead + ndpip_pbuf_length(pb[idx]);
+#endif
 
+#ifndef NDPIP_DEBUG_NO_CKSUM
 		ndpip_udp_prepare_pbuf(udp_sock, pb[idx], iph, uh);
+#endif
 
 		struct ndpip_pbuf_meta *pm = ndpip_pbuf_metadata(pb[idx]);
 		pm->xmit_time = now;
@@ -177,9 +186,9 @@ int ndpip_udp_send(struct ndpip_udp_socket *udp_sock, struct ndpip_pbuf **pb, ui
 	return cnt;
 }
 
+#ifndef NDPIP_DEBUG_NO_CKSUM
 static void ndpip_udp_prepare_pbuf(struct ndpip_udp_socket *udp_sock, struct ndpip_pbuf *pb, struct iphdr *iph, struct udphdr *uh)
 {
-#ifndef NDPIP_DEBUG_NO_CKSUM
 	struct ndpip_socket *sock = &udp_sock->socket;
 
 	ndpip_pbuf_set_l2_len(pb, sizeof(struct ethhdr));
@@ -198,5 +207,5 @@ static void ndpip_udp_prepare_pbuf(struct ndpip_udp_socket *udp_sock, struct ndp
 		uh->uh_sum = 0;
 		uh->uh_sum = ndpip_ipv4_udptcp_cksum(iph, uh);
 	}
-#endif
 }
+#endif

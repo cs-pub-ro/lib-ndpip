@@ -21,6 +21,7 @@ struct ndpip_hashtable *ndpip_listening_sockets = NULL;
 
 struct ndpip_socket **socket_table = NULL;
 
+#ifdef NDPIP_GRANTS_ENABLE
 int ndpip_socket_grants_get(struct ndpip_socket *sock, uint32_t grants) {
 	struct ndpip_pbuf *pb;
 	
@@ -51,6 +52,7 @@ int ndpip_socket_grants_get(struct ndpip_socket *sock, uint32_t grants) {
 
 	return 0;
 }
+#endif
 
 static struct ndpip_socket *ndpip_socket_get(int sockfd)
 {
@@ -89,9 +91,11 @@ struct ndpip_socket *ndpip_socket_new(int domain, int type, int protocol)
 	sock->socket_id = socket_id;
 	sock->protocol = protocol;
 	sock->iface = NULL;
+#ifdef NDPIP_GRANTS_ENABLE
 	sock->grants = 0;
 	sock->grants_overhead = NDPIP_EQDS_GRANTS_OVERHEAD;
 	sock->grants_overcommit = 0;
+#endif
 
 	sock->local = (struct sockaddr_in) { .sin_family = AF_INET, .sin_addr.s_addr = 0, .sin_port = 0 };
 	sock->remote = (struct sockaddr_in) { .sin_family = AF_INET, .sin_addr.s_addr = 0, .sin_port = 0 };
@@ -144,6 +148,7 @@ int ndpip_socket(int domain, int type, int protocol)
 	return sock->socket_id;
 }
 
+#ifdef NDPIP_GRANTS_ENABLE
 int ndpip_grants_get(int sockfd, uint32_t grants)
 {
 	if (sockfd < 0) {
@@ -159,6 +164,7 @@ int ndpip_grants_get(int sockfd, uint32_t grants)
 	
 	return ndpip_socket_grants_get(sock, grants);
 }
+#endif
 
 int ndpip_bind(int sockfd, const struct sockaddr *addr, socklen_t addrlen)
 {
@@ -426,6 +432,7 @@ int ndpip_alloc(int sockfd, struct ndpip_pbuf **pb, uint16_t len) {
 	return ndpip_sock_alloc(sock, pb, len, false);
 }
 
+#ifdef NDPIP_GRANTS_ENABLE
 int ndpip_cost(int sockfd, struct ndpip_pbuf **pb, uint16_t len, uint16_t *pb_cost) {
 	if (sockfd < 0) {
 		errno = EBADF;
@@ -456,6 +463,7 @@ int ndpip_cost(int sockfd, struct ndpip_pbuf **pb, uint16_t len, uint16_t *pb_co
 
 	return 0;
 }
+#endif
 
 int ndpip_sock_free(struct ndpip_socket *sock, struct ndpip_pbuf **pb, uint16_t len, bool rx)
 {
@@ -574,6 +582,7 @@ int ndpip_getsockopt(int sockfd, int level, int optname, const void *optval, soc
 	}
 
 	switch (optname) {
+#ifdef NDPIP_GRANTS_ENABLE
 		case SO_NDPIP_GRANTS:
 			if (sock->protocol != IPPROTO_TCP) {
 				errno = EINVAL;
@@ -603,6 +612,7 @@ int ndpip_getsockopt(int sockfd, int level, int optname, const void *optval, soc
 			*((size_t *) optval) = grants;
 
 			return 0;
+#endif
 
 		case SO_NDPIP_BURST:
 			if (optlen != sizeof(uint16_t)) {

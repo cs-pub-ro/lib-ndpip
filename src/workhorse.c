@@ -24,9 +24,11 @@
 #include <netinet/tcp.h>
 
 
+#ifdef NDPIP_GRANTS_ENABLE
 bool ndpip_log_grants = false;
 int64_t (*ndpip_log_grants_msg)[5];
 size_t ndpip_log_grants_idx = 0;
+#endif
 
 int ndpip_rx_thread(void *argp)
 {
@@ -75,6 +77,7 @@ int ndpip_rx_thread(void *argp)
 				(memcmp(eth->h_dest, bcast, ETH_ALEN) != 0))
 				goto free_pkt;
 
+#ifdef NDPIP_GRANTS_ENABLE
 			if (ntohs(eth->h_proto) == ETH_P_EQDSCN) {
 				struct eqds_cn *cn = ((void *) eth) + sizeof(struct ethhdr);
 				//struct in_addr cn_destination = { .s_addr = cn->destination };
@@ -105,6 +108,7 @@ int ndpip_rx_thread(void *argp)
 
 				goto free_pkt;
 			}
+#endif
 
 			if (ntohs(eth->h_proto) != ETH_P_IP)
 				goto free_pkt;
@@ -237,9 +241,10 @@ free_pkt:
 
 			int r = ndpip_tcp_feed_flush(reply_tcp_socket, reply);
 			if (r == 1) {
-				reply_socket->grants -= ndpip_pbuf_length(reply) + reply_socket->grants_overhead;
 				replies_len++;
 
+#ifdef NDPIP_GRANTS_ENABLE
+				reply_socket->grants -= ndpip_pbuf_length(reply) + reply_socket->grants_overhead;
 				/*
 				if (ndpip_log_grants) {
 					ndpip_log_grants_idx++;
@@ -248,6 +253,7 @@ free_pkt:
 					ndpip_log_grants_msg[ndpip_log_grants_idx][1] = reply_socket->grants;
 				}
 				*/
+#endif
 			}
 
 			reply_tcp_socket->rx_loop_seen = false;

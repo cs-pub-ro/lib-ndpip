@@ -53,9 +53,11 @@ struct ndpip_socket {
 	struct ndpip_ring *xmit_ring;
 	struct ndpip_ring *recv_ring;
 
+#ifdef NDPIP_GRANTS_ENABLE
 	int64_t grants_overhead;
 	_Atomic int64_t grants;
 	_Atomic int64_t grants_overcommit;
+#endif
 };
 
 struct ndpip_socket *ndpip_socket_new(int domain, int type, int protocol);
@@ -63,7 +65,9 @@ struct ndpip_socket *ndpip_socket_accept(struct ndpip_socket *sock);
 int ndpip_sock_free(struct ndpip_socket *sock, struct ndpip_pbuf **pb, uint16_t len, bool rx);
 int ndpip_sock_alloc(struct ndpip_socket *sock, struct ndpip_pbuf **pb, uint16_t len, bool rx);
 struct ndpip_socket *ndpip_socket_get_by_peer(struct sockaddr_in *local, struct sockaddr_in *remote, int protocol);
+#ifdef NDPIP_GRANTS_ENABLE
 int ndpip_socket_grants_get(struct ndpip_socket *sock, uint32_t grants);
+#endif
 
 extern struct ndpip_socket **socket_table;
 
