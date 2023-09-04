@@ -70,7 +70,7 @@ struct ndpip_tcp_socket {
 	uint32_t tcp_can_free;
 };
 
-int ndpip_tcp_feed(struct ndpip_tcp_socket *tcp_sock, struct sockaddr_in *remote, struct ndpip_pbuf *pb, struct ndpip_pbuf *rpb);
+int ndpip_tcp_feed(struct ndpip_tcp_socket *tcp_sock, struct sockaddr_in *remote, struct ndpip_pbuf *pb, uint16_t th_len, struct ndpip_pbuf *rpb);
 int ndpip_tcp_flush(struct ndpip_tcp_socket *tcp_sock, struct ndpip_pbuf *rpb);
 int ndpip_tcp_send(struct ndpip_tcp_socket *tcp_sock, struct ndpip_pbuf **pb, uint16_t cnt);
 void ndpip_tcp_rto_handler(void *argp);

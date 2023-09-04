@@ -12,7 +12,8 @@
 #define NDPIP_TODO_MEMPOOL_CACHE_SZ 256
 #define NDPIP_TODO_MBUF_SIZE 3072
 #define NDPIP_TODO_MTU 1500
-#define NDPIP_DPDK_LINUX_MBUF_PRIVATE RTE_ALIGN_CEIL(sizeof(struct ndpip_pbuf_meta), RTE_MBUF_PRIV_ALIGN)
+#define NDPIP_LINUX_DPDK_MBUF_PRIVATE RTE_ALIGN_CEIL(sizeof(struct ndpip_pbuf_meta), RTE_MBUF_PRIV_ALIGN)
+#define NDPIP_LINUX_DPDK_RX_BURST_RETRIES 1000
 
 static struct ndpip_linux_dpdk_iface iface = {
         .iface_netdev_id = -1
@@ -116,13 +117,13 @@ int ndpip_linux_dpdk_register_iface(int netdev_id)
 		return -1;
 	}
 
-	(&iface)->iface_pbuf_pool_rx = (void *) rte_pktmbuf_pool_create("ndpip_pool_rx", NDPIP_TODO_NB_MBUF, NDPIP_TODO_MEMPOOL_CACHE_SZ, NDPIP_DPDK_LINUX_MBUF_PRIVATE, NDPIP_TODO_MBUF_SIZE, rte_socket_id());
+	(&iface)->iface_pbuf_pool_rx = (void *) rte_pktmbuf_pool_create("ndpip_pool_rx", NDPIP_TODO_NB_MBUF, NDPIP_TODO_MEMPOOL_CACHE_SZ, NDPIP_LINUX_DPDK_MBUF_PRIVATE, NDPIP_TODO_MBUF_SIZE, rte_socket_id());
 	if ((&iface)->iface_pbuf_pool_rx == NULL) {
 		perror("rte_pktmbuf_pool_create");
 		return -1;
 	}
 
-	(&iface)->iface_pbuf_pool_tx = (void *) rte_pktmbuf_pool_create("ndpip_pool_tx", NDPIP_TODO_NB_MBUF, NDPIP_TODO_MEMPOOL_CACHE_SZ, NDPIP_DPDK_LINUX_MBUF_PRIVATE, NDPIP_TODO_MBUF_SIZE, rte_socket_id());
+	(&iface)->iface_pbuf_pool_tx = (void *) rte_pktmbuf_pool_create("ndpip_pool_tx", NDPIP_TODO_NB_MBUF, NDPIP_TODO_MEMPOOL_CACHE_SZ, NDPIP_LINUX_DPDK_MBUF_PRIVATE, NDPIP_TODO_MBUF_SIZE, rte_socket_id());
 	if ((&iface)->iface_pbuf_pool_tx == NULL) {
 		perror("rte_pktmbuf_pool_create");
 		return -1;
@@ -200,14 +201,17 @@ int ndpip_linux_dpdk_iface_rx_burst(struct ndpip_iface *iface, struct ndpip_pbuf
 	struct rte_mbuf **mb = (void *) pb;
 	struct ndpip_linux_dpdk_iface *iface_linux_dpdk = (void *) iface;
 
-	uint16_t r_cnt = 0;
+	uint16_t tmp_cnt = *cnt;
 
-	for (int i = 0; (i < 1000) && (r_cnt < *cnt); i++)
-		r_cnt += rte_eth_rx_burst(iface_linux_dpdk->iface_netdev_id, iface_linux_dpdk->iface_rx_queue_id, mb + r_cnt, *cnt - r_cnt);
+	for (int i = 0; i < NDPIP_LINUX_DPDK_RX_BURST_RETRIES; i++) {
+		uint16_t r_cnt = rte_eth_rx_burst(iface_linux_dpdk->iface_netdev_id, iface_linux_dpdk->iface_rx_queue_id, mb, tmp_cnt);
+		if (r_cnt > 0) {
+			*cnt = r_cnt;
+			return 0;
+		}
+	}
 
-	*cnt = r_cnt;
-
-	return 0;
+	return -1;
 }
 
 void *ndpip_linux_dpdk_pbuf_data(struct ndpip_pbuf *pbuf)
