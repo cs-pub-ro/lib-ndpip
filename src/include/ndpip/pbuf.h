@@ -3,6 +3,9 @@
 
 #include "../../include/ndpip/pbuf.h"
 
+#include <stdint.h>
+#include <time.h>
+
 struct ndpip_pbuf_meta {
 	struct timespec xmit_time;
 	uint32_t data_len;

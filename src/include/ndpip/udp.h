@@ -11,8 +11,7 @@
 
 struct ndpip_udp_socket {
     struct ndpip_socket socket;
-
-	uint8_t xmit_template[sizeof(struct ethhdr) + sizeof(struct iphdr) + sizeof(struct udphdr)];
+    uint8_t xmit_template[sizeof(struct ethhdr) + sizeof(struct iphdr) + sizeof(struct udphdr)];
 };
 
 int ndpip_udp_build_xmit_template(struct ndpip_udp_socket *sock);

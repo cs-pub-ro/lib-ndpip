@@ -51,14 +51,14 @@ int ndpip_rx_thread(void *argp)
 
 		int r = ndpip_iface_rx_burst(iface, (void *) pkts, &pkt_cnt);
 
-		if (iter++ >= 50000UL) {
+		if (iter++ >= 10000000UL) {
 			struct timespec now;
                         ndpip_time_now(&now);
 
                         uint64_t delta = (now.tv_sec - before.tv_sec) * NDPIP_NSEC_IN_SEC + (now.tv_nsec - before.tv_nsec);
 			if (delta > NDPIP_NSEC_IN_SEC) {
 				if (pkt_cnt_a != 0)
-					printf("avg_burst=%lf; avg_replies=%lf; pps=%lf;\n", ((double) pkt_cnt_a) / iter, ((double) replies_len_a) / iter, ((double) pkt_cnt_a) * NDPIP_NSEC_IN_SEC / delta);
+					printf("ndpip_rx_thread: avg_burst=%lf; avg_replies=%lf; pps=%lf;\n", ((double) pkt_cnt_a) / iter, ((double) replies_len_a) / iter, ((double) pkt_cnt_a) * NDPIP_NSEC_IN_SEC / delta);
 
 				replies_len_a = 0;
 				pkt_cnt_a = 0;
@@ -194,20 +194,16 @@ int ndpip_rx_thread(void *argp)
 					.sin_port = th->th_sport
 				};
 
-				struct ndpip_tcp_socket *tcp_sock = (struct ndpip_tcp_socket *) ndpip_socket_get_by_peer(&local, &remote, IPPROTO_TCP);
+				struct ndpip_tcp_socket *tcp_sock = (struct ndpip_tcp_socket *) ndpip_socket_get_by_peer(local, remote, IPPROTO_TCP);
 				if (tcp_sock == NULL)
 					goto free_pkt;
-
-				int r = ndpip_tcp_feed(tcp_sock, &remote, pb, pbuf_len - sizeof(struct ethhdr) - sizeof(struct iphdr), replies[replies_len]);
-				if (r == 1)
-					replies_len++;
 
 				if (!tcp_sock->rx_loop_seen) {
 					reply_sockets[reply_sockets_len++] = tcp_sock;
 					tcp_sock->rx_loop_seen = true;
 				}
 
-				if (r == 2)
+				if (ndpip_tcp_feed(tcp_sock, &remote, pb, pbuf_len - sizeof(struct ethhdr) - sizeof(struct iphdr)) == 1)
 					continue;
 			}
 
@@ -242,7 +238,7 @@ int ndpip_rx_thread(void *argp)
 					.sin_port = uh->uh_sport
 				};
 
-				struct ndpip_udp_socket *udp_sock = (struct ndpip_udp_socket *) ndpip_socket_get_by_peer(&local, &remote, IPPROTO_UDP);
+				struct ndpip_udp_socket *udp_sock = (struct ndpip_udp_socket *) ndpip_socket_get_by_peer(local, remote, IPPROTO_UDP);
 				if (udp_sock == NULL)
 					goto free_pkt;
 
@@ -258,12 +254,10 @@ free_pkt:
 
 		for (uint16_t idx = 0; idx < reply_sockets_len; idx++) {
 			struct ndpip_tcp_socket *reply_tcp_socket = reply_sockets[idx];
-			struct ndpip_pbuf *reply = replies[replies_len];
 
-			int r = ndpip_tcp_flush(reply_tcp_socket, reply);
+			int r = ndpip_tcp_flush(reply_tcp_socket, replies[replies_len]);
 			if (r == 1) {
 				replies_len++;
-
 #ifdef NDPIP_GRANTS_ENABLE
 				reply_socket_socket->socket.grants -= ndpip_pbuf_length(reply) + reply_socket->grants_overhead;
 				/*

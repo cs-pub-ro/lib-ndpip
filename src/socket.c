@@ -10,14 +10,15 @@
 
 #define NDPIP_TODO_ESTABLISHED_SOCKETS_BUCKETS 1024
 #define NDPIP_TODO_LISTENING_SOCKETS_BUCKETS 32
-#define NDPIP_TODO_SOCKET_XMIT_RING_LENGTH (1 << 20)
-#define NDPIP_TODO_SOCKET_RECV_RING_LENGTH (1 << 20)
 
 #define NDPIP_EQDS_GRANTS_OVERHEAD 60
 
 
-struct ndpip_hashtable *ndpip_established_sockets = NULL;
-struct ndpip_hashtable *ndpip_listening_sockets = NULL;
+struct ndpip_hashtable *ndpip_tcp_established_sockets = NULL;
+struct ndpip_hashtable *ndpip_tcp_listening_sockets = NULL;
+
+struct ndpip_hashtable *ndpip_udp_established_sockets = NULL;
+struct ndpip_hashtable *ndpip_udp_listening_sockets = NULL;
 
 struct ndpip_socket **socket_table = NULL;
 
@@ -100,8 +101,8 @@ struct ndpip_socket *ndpip_socket_new(int domain, int type, int protocol)
 	sock->local = (struct sockaddr_in) { .sin_family = AF_INET, .sin_addr.s_addr = 0, .sin_port = 0 };
 	sock->remote = (struct sockaddr_in) { .sin_family = AF_INET, .sin_addr.s_addr = 0, .sin_port = 0 };
 
-	sock->xmit_ring = ndpip_ring_alloc(NDPIP_TODO_SOCKET_XMIT_RING_LENGTH, sizeof(struct ndpip_pbuf *));
-	sock->recv_ring = ndpip_ring_alloc(NDPIP_TODO_SOCKET_RECV_RING_LENGTH, sizeof(struct ndpip_pbuf *));
+	sock->xmit_ring = ndpip_ring_alloc(NDPIP_SOCKET_XMIT_RING_LENGTH);
+	sock->recv_ring = ndpip_ring_alloc(NDPIP_SOCKET_RECV_RING_LENGTH);
 
 
 	if (protocol == IPPROTO_TCP) {
@@ -121,6 +122,7 @@ struct ndpip_socket *ndpip_socket_new(int domain, int type, int protocol)
 		tcp_sock->tcp_send_win_scale = 0;
 		tcp_sock->tcp_rto = false;
 		tcp_sock->tcp_rsp_ack = false;
+		tcp_sock->tcp_req_ack = false;
 		tcp_sock->rx_loop_seen = false;
 		tcp_sock->tcp_can_free = 0;
 
@@ -135,8 +137,10 @@ int ndpip_socket(int domain, int type, int protocol)
 {
 	if (socket_table == NULL) {
 		socket_table = calloc(NDPIP_TODO_MAX_FDS, sizeof(struct ndpip_socket *));
-		ndpip_established_sockets = ndpip_hashtable_alloc(NDPIP_TODO_ESTABLISHED_SOCKETS_BUCKETS);
-		ndpip_listening_sockets = ndpip_hashtable_alloc(NDPIP_TODO_LISTENING_SOCKETS_BUCKETS);
+		ndpip_tcp_established_sockets = ndpip_hashtable_alloc(NDPIP_TODO_ESTABLISHED_SOCKETS_BUCKETS);
+		ndpip_tcp_listening_sockets = ndpip_hashtable_alloc(NDPIP_TODO_LISTENING_SOCKETS_BUCKETS);
+		ndpip_udp_established_sockets = ndpip_hashtable_alloc(NDPIP_TODO_ESTABLISHED_SOCKETS_BUCKETS);
+		ndpip_udp_listening_sockets = ndpip_hashtable_alloc(NDPIP_TODO_LISTENING_SOCKETS_BUCKETS);
 	}
 
 	struct ndpip_socket *sock = ndpip_socket_new(domain, type, protocol);
@@ -200,7 +204,7 @@ int ndpip_bind(int sockfd, const struct sockaddr *addr, socklen_t addrlen)
 	}
 
 	sock->local = *addr_in;
-	sock->iface = ndpip_iface_get_by_inaddr(sock->local.sin_addr);
+	sock->iface = ndpip_iface_get_by_inaddr(addr_in->sin_addr);
 
 	if (sock->protocol == IPPROTO_TCP) {
 		struct ndpip_tcp_socket *tcp_sock = (struct ndpip_tcp_socket *) sock;
@@ -214,13 +218,8 @@ int ndpip_bind(int sockfd, const struct sockaddr *addr, socklen_t addrlen)
 	}
 
 	if (sock->protocol == IPPROTO_UDP) {
-		struct ndpip_listening_key key = {
-			.daddr = sock->local.sin_addr.s_addr,
-			.dport = sock->local.sin_port,
-			.proto = IPPROTO_UDP
-		};
-
-		ndpip_hashtable_put(ndpip_listening_sockets, &key, sizeof(key), sock);
+		uint64_t hash = ndpip_socket_listening_hash(*addr_in);
+		ndpip_hashtable_put(ndpip_udp_listening_sockets, hash, sock);
 	}
 
 	return 0;
@@ -255,13 +254,8 @@ int ndpip_listen(int sockfd, int backlog)
 
 	tcp_sock->state = LISTENING;
 
-	struct ndpip_listening_key key = {
-		.daddr = sock->local.sin_addr.s_addr,
-		.dport = sock->local.sin_port,
-		.proto = IPPROTO_TCP
-	};
-
-	ndpip_hashtable_put(ndpip_listening_sockets, &key, sizeof(key), sock);
+	uint64_t hash = ndpip_socket_listening_hash(sock->local);
+	ndpip_hashtable_put(ndpip_tcp_listening_sockets, hash, sock);
 
 	return 0;
 }
@@ -341,16 +335,6 @@ int ndpip_recv(int sockfd, struct ndpip_pbuf **pb, uint16_t count)
 		return -1;
 	}
 
-	if (sock->protocol == IPPROTO_TCP) {
-		struct ndpip_tcp_socket *tcp_sock = (struct ndpip_tcp_socket *) sock;
-
-		if ((tcp_sock->state != CONNECTED) &&
-			(ndpip_ring_size(sock->recv_ring) == 0)) {
-
-			errno = EINVAL;
-			return -1;
-		}
-	}
 
 	if (count == 0) {
 		errno = EINVAL;
@@ -360,6 +344,14 @@ int ndpip_recv(int sockfd, struct ndpip_pbuf **pb, uint16_t count)
 	size_t rcount = count;
 	if (ndpip_ring_pop(sock->recv_ring, &rcount, pb) < 0) {
 		errno = EAGAIN;
+
+		if (sock->protocol == IPPROTO_TCP) {
+			struct ndpip_tcp_socket *tcp_sock = (struct ndpip_tcp_socket *) sock;
+
+			if (tcp_sock->state != CONNECTED)
+				errno = EINVAL;
+		}
+
 		return -1;
 	}
 	
@@ -508,18 +500,24 @@ int ndpip_sock_alloc(struct ndpip_socket *sock, struct ndpip_pbuf **pb, uint16_t
 	}
 
 	uint16_t tmp_len = len;
-
-	if (ndpip_pbuf_pool_request(pool, pb, &tmp_len) < 0) {
-		errno = EFAULT;
-		return -1;
-	}
+	if (ndpip_pbuf_pool_request(pool, pb, &tmp_len) < 0)
+		goto ret_err;
 
 	if (tmp_len != len) {
-		errno = EFAULT;
-		return -1;
+		ndpip_pbuf_pool_release(pool, pb, tmp_len);
+		goto ret_err;
 	}
 
 	return 0;
+
+ret_err:
+	if ((sock->protocol == IPPROTO_TCP) && !rx) {
+		struct ndpip_tcp_socket *tcp_sock = (void *) sock;
+		ndpip_tcp_free_acked(tcp_sock);
+	}
+
+	errno = EFAULT;
+	return -1;
 }
 
 int ndpip_setsockopt(int sockfd, int level, int optname, const void *optval, socklen_t optlen)
@@ -661,37 +659,44 @@ int ndpip_close(int sockfd)
 	return -1;
 }
 
+uint64_t ndpip_socket_established_hash(struct sockaddr_in local, struct sockaddr_in remote)
+{
+	uint64_t saddr = local.sin_addr.s_addr, sport = local.sin_port, daddr = remote.sin_addr.s_addr, dport = remote.sin_port;
+	return (saddr ^ (sport | (dport << 16))) | (daddr << 32);
+}
 
-struct ndpip_socket *ndpip_socket_get_by_peer(struct sockaddr_in *local, struct sockaddr_in *remote, int protocol)
+uint64_t ndpip_socket_listening_hash(struct sockaddr_in local)
+{
+	uint64_t saddr = local.sin_addr.s_addr, sport = local.sin_port;
+	return saddr | (sport << 32);
+}
+
+struct ndpip_socket *ndpip_socket_get_by_peer(struct sockaddr_in local, struct sockaddr_in remote, int protocol)
 {
 	if (socket_table == NULL)
 		return NULL;
 
-	struct ndpip_established_key key = {
-		.saddr = remote->sin_addr.s_addr,
-		.daddr = local->sin_addr.s_addr,
-		.sport = remote->sin_port,
-		.dport = local->sin_port,
-		.proto = protocol
-	};
+	uint64_t hash1 = ndpip_socket_established_hash(local, remote);
 
-	struct ndpip_listening_key key2 = {
-		.daddr = local->sin_addr.s_addr,
-		.dport = local->sin_port,
-		.proto = protocol
-	};
+	if (protocol == IPPROTO_TCP) {
+		struct ndpip_socket *ret = ndpip_hashtable_get(ndpip_tcp_established_sockets, hash1);
+		if (ret != NULL)
+			return ret;
 
-	/*
-	printf("GET_ESTABLISHED: ");
-	for (int i = 0; i < sizeof(key); i++)
-		printf("%hhx", ((uint8_t *)&key)[i]);
-	printf("\n");
-	*/
-	struct ndpip_socket *ret = ndpip_hashtable_get(ndpip_established_sockets, &key, sizeof(key));
-	if (ret != NULL)
-		return ret;
+		uint64_t hash2 = ndpip_socket_listening_hash(local);
+		return ndpip_hashtable_get(ndpip_tcp_listening_sockets, hash2);
+	}
 
-	return ndpip_hashtable_get(ndpip_listening_sockets, &key2, sizeof(key2));
+	if (protocol == IPPROTO_UDP) {
+		struct ndpip_socket *ret = ndpip_hashtable_get(ndpip_udp_established_sockets, hash1);
+		if (ret != NULL)
+			return ret;
+
+		uint64_t hash2 = ndpip_socket_listening_hash(local);
+		return ndpip_hashtable_get(ndpip_udp_listening_sockets, hash2);
+	}
+
+	return NULL;
 }
 
 /*

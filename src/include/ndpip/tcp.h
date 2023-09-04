@@ -33,7 +33,7 @@ struct ndpip_tcp_socket {
 
 	struct ndpip_list_head accept_queue;
 
-	enum {
+	enum ndpip_tcp_socket_state {
 		NEW,
 		BOUND,
 		ACCEPTING,
@@ -65,20 +65,19 @@ struct ndpip_tcp_socket {
 
 	bool tcp_rto;
 	bool tcp_rsp_ack;
+	bool tcp_req_ack;
 	bool rx_loop_seen;
 
 	uint32_t tcp_can_free;
 };
 
-int ndpip_tcp_feed(struct ndpip_tcp_socket *tcp_sock, struct sockaddr_in *remote, struct ndpip_pbuf *pb, uint16_t th_len, struct ndpip_pbuf *rpb);
+int ndpip_tcp_feed(struct ndpip_tcp_socket *tcp_sock, struct sockaddr_in *remote, struct ndpip_pbuf *pb, uint16_t th_len);
 int ndpip_tcp_flush(struct ndpip_tcp_socket *tcp_sock, struct ndpip_pbuf *rpb);
+void ndpip_tcp_free_acked(struct ndpip_tcp_socket *tcp_sock);
 int ndpip_tcp_send(struct ndpip_tcp_socket *tcp_sock, struct ndpip_pbuf **pb, uint16_t cnt);
 void ndpip_tcp_rto_handler(void *argp);
 int ndpip_tcp_connect(struct ndpip_tcp_socket *tcp_sock);
 struct ndpip_tcp_socket *ndpip_tcp_accept(struct ndpip_tcp_socket *tcp_sock);
 int ndpip_tcp_close(struct ndpip_tcp_socket *tcp_sock);
-
-extern struct ndpip_hashtable *ndpip_established_sockets;
-extern struct ndpip_hashtable *ndpip_listening_sockets;
 
 #endif

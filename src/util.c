@@ -16,41 +16,57 @@
 #endif
 
 
-struct ndpip_ring *ndpip_ring_alloc(size_t length, size_t esize)
+struct ndpip_ring *ndpip_ring_alloc(size_t length)
 {
 	struct ndpip_ring *ret = malloc(sizeof(struct ndpip_ring));
 
-	ret->ring_base = malloc(length * esize);
+	ret->ring_base = malloc(length * sizeof(struct ndpip_pbuf *));
 	ret->ring_length = length;
 
 	ret->ring_start = 0;
 	ret->ring_end = 0;
 	ret->ring_mask = length - 1;
-	ret->ring_esize = esize;
 
 	return ret;
 }
 
-int ndpip_ring_push(struct ndpip_ring *ring, void *buf, size_t count)
+int ndpip_ring_push_one(struct ndpip_ring *ring, struct ndpip_pbuf *pb)
+{
+	size_t ring_end = ring->ring_end;
+	if ((ring_end - ring->ring_start) >= ring->ring_length)
+		return -1;
+
+	size_t producer = ring_end & ring->ring_mask;
+	ring->ring_base[producer] = pb;
+	ring->ring_end++;
+
+	return 0;
+}
+
+int ndpip_ring_push(struct ndpip_ring *ring, struct ndpip_pbuf **pbs, size_t count)
 {
 	if (count == 0)
 		return 0;
 
-	if ((ring->ring_end - ring->ring_start + count) > ring->ring_length)
+	size_t ring_end = ring->ring_end;
+	size_t ring_length = ring->ring_length;
+	if ((ring_end - ring->ring_start + count) > ring_length)
 		return -1;
 
-	size_t producer = ring->ring_end & ring->ring_mask;
+	size_t producer = ring_end & ring->ring_mask;
 
-        size_t count1 = ring->ring_length - producer;
+        size_t count1 = ring_length - producer;
         count1 = count1 < count ? count1 : count;
 
+	struct ndpip_pbuf **ring_base = ring->ring_base;
+
 	if (count1 != 0)
-		memcpy(ring->ring_base + ring->ring_esize * producer, buf, ring->ring_esize * count1);
+		memcpy(&ring_base[producer], pbs, sizeof(struct ndpip_pbuf *) * count1);
 
 	if (count1 == count)
 		goto ret;
 
-	memcpy(ring->ring_base, buf + ring->ring_esize * count1, ring->ring_esize * (count - count1));
+	memcpy(ring_base, &pbs[count1], sizeof(struct ndpip_pbuf *) * (count - count1));
 
 ret:
 	ring->ring_end += count;
@@ -58,22 +74,29 @@ ret:
 	return 0;
 }
 
+size_t ndpip_ring_free(struct ndpip_ring *ring)
+{
+	return ring->ring_length - (ring->ring_end - ring->ring_start);
+}
+
 size_t ndpip_ring_size(struct ndpip_ring *ring)
 {
 	return ring->ring_end - ring->ring_start;
 }
 
-static int ndpip_ring_pop0(struct ndpip_ring *ring, size_t *count, void *buf, bool pop)
+static int ndpip_ring_pop0(struct ndpip_ring *ring, size_t *count, struct ndpip_pbuf **pbs, bool pop)
 {
 	if (*count == 0)
 		return 0;
 
-	size_t r_count = ring->ring_end - ring->ring_start;
+	size_t ring_start = ring->ring_start;
+	size_t r_count = ring->ring_end - ring_start;
 	if (r_count == 0)
 		return -1;
 
-	r_count = r_count < *count ? r_count : *count;
-	size_t consumer = ring->ring_start & ring->ring_mask;
+	size_t tmp_count = *count;
+	r_count = r_count < tmp_count ? r_count : tmp_count;
+	size_t consumer = ring_start & ring->ring_mask;
 
 	if (pop)
 		ring->ring_start += r_count;
@@ -81,12 +104,14 @@ static int ndpip_ring_pop0(struct ndpip_ring *ring, size_t *count, void *buf, bo
 	size_t count1 = ring->ring_length - consumer;
 	count1 = count1 < r_count ? count1 : r_count;
 
-	memcpy(buf, ring->ring_base + ring->ring_esize * consumer, ring->ring_esize * count1);
+	struct ndpip_pbuf **ring_base = ring->ring_base;
+
+	memcpy(pbs, &ring_base[consumer], sizeof(struct ndpip_pbuf *) * count1);
 
 	if (count1 == r_count)
 		goto ret;
 
-	memcpy(buf + ring->ring_esize * count1, ring->ring_base, ring->ring_esize * (r_count - count1));
+	memcpy(&pbs[count1], ring_base, sizeof(struct ndpip_pbuf *) * (r_count - count1));
 
 ret:
 	*count = r_count;
@@ -106,14 +131,14 @@ int ndpip_ring_flush(struct ndpip_ring *ring, size_t count)
 	return 0;
 }
 
-int ndpip_ring_peek(struct ndpip_ring *ring, size_t *count, void *buf)
+int ndpip_ring_peek(struct ndpip_ring *ring, size_t *count, struct ndpip_pbuf **pbs)
 {
-	return ndpip_ring_pop0(ring, count, buf, false);
+	return ndpip_ring_pop0(ring, count, pbs, false);
 }
 
-int ndpip_ring_pop(struct ndpip_ring *ring, size_t *count, void *buf)
+int ndpip_ring_pop(struct ndpip_ring *ring, size_t *count, struct ndpip_pbuf **pbs)
 {
-	return ndpip_ring_pop0(ring, count, buf, true);
+	return ndpip_ring_pop0(ring, count, pbs, true);
 }
 
 void ndpip_list_add(struct ndpip_list_head *prev, struct ndpip_list_head *element)
@@ -208,28 +233,8 @@ struct ndpip_hashtable *ndpip_hashtable_alloc(uint64_t buckets)
 	return ret;
 }
 
-uint64_t ndpip_hash(void *key, size_t key_size)
+void *ndpip_hashtable_get(struct ndpip_hashtable *hashtable, uint64_t hash)
 {
-	uint64_t ret = 0;
-	size_t idx = 0;
-
-	for (;idx <= (key_size - sizeof(uint64_t)); idx += sizeof(uint64_t))
-		ret += *(uint64_t *)(key + idx);
-
-	for (;idx < key_size; idx++)
-		ret += *(uint8_t *)(key + idx);
-
-	return ret;
-}
-
-void *ndpip_hashtable_get(struct ndpip_hashtable *hashtable, void *key, size_t key_size)
-{
-	uint64_t hash = ndpip_hash(key, key_size);
-	/*
-	if ((hash != 0x20101108a148a1dUL) && (hash != 0x10101108b148a1dUL) && (hash != 0x689130201010aUL))
-		printf("%lx\n", hash);
-		*/
-
 	struct ndpip_list_head *bucket = (void *) &hashtable->hashtable_buckets[hash & hashtable->hashtable_mask];
 
 	ndpip_list_foreach(struct ndpip_hlist_node, hnode, bucket) {
@@ -240,9 +245,8 @@ void *ndpip_hashtable_get(struct ndpip_hashtable *hashtable, void *key, size_t k
 	return NULL;
 }
 
-void ndpip_hashtable_put(struct ndpip_hashtable *hashtable, void *key, size_t key_size, void *data)
+void ndpip_hashtable_put(struct ndpip_hashtable *hashtable, uint64_t hash, void *data)
 {
-	uint64_t hash = ndpip_hash(key, key_size);
 	struct ndpip_list_head *bucket = (void *) &hashtable->hashtable_buckets[hash & hashtable->hashtable_mask];
 
 	struct ndpip_hlist_node *hnode = malloc(sizeof(struct ndpip_hlist_node));
@@ -252,13 +256,11 @@ void ndpip_hashtable_put(struct ndpip_hashtable *hashtable, void *key, size_t ke
 	ndpip_list_add(bucket, (struct ndpip_list_head *) hnode);
 }
 
-void ndpip_hashtable_del(struct ndpip_hashtable *hashtable, void *key, size_t key_size)
+void ndpip_hashtable_del(struct ndpip_hashtable *hashtable, uint64_t hash)
 {
-	uint64_t hash = ndpip_hash(key, key_size);
 	struct ndpip_list_head *bucket = (void *) &hashtable->hashtable_buckets[hash & hashtable->hashtable_mask];
 
 	struct ndpip_hlist_node *rmnode = NULL;
-
 	ndpip_list_foreach(struct ndpip_hlist_node, hnode, bucket) {
 		if (hnode->hnode_hash == hash)
 			rmnode = hnode;

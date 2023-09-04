@@ -9,7 +9,6 @@
 #include <netinet/ip.h>
 #include <netinet/udp.h>
 
-
 #ifndef NDPIP_DEBUG_NO_CKSUM
 static void ndpip_udp_prepare_pbuf(struct ndpip_udp_socket *tcp_sock, struct ndpip_pbuf *pb, struct iphdr *iph, struct udphdr *uh);
 #endif
@@ -18,17 +17,10 @@ int ndpip_udp_close(struct ndpip_udp_socket *udp_sock)
 {
 	struct ndpip_socket *sock = &udp_sock->socket;
 
-	struct ndpip_established_key key = {
-		.saddr = sock->remote.sin_addr.s_addr,
-		.daddr = sock->local.sin_addr.s_addr,
-		.sport = sock->remote.sin_port,
-		.dport = sock->local.sin_port,
-		.proto = IPPROTO_UDP
-	};
+	uint64_t hash = ndpip_socket_established_hash(sock->local, sock->remote);
+	ndpip_hashtable_del(ndpip_udp_established_sockets, hash);
 
-	ndpip_hashtable_del(ndpip_established_sockets, &key, sizeof(key));
-    
-    return 0;
+	return 0;
 }
 
 int ndpip_udp_build_xmit_template(struct ndpip_udp_socket *udp_sock) {
@@ -80,23 +72,11 @@ int ndpip_udp_connect(struct ndpip_udp_socket *udp_sock)
 
 	struct ndpip_socket *sock = &udp_sock->socket;
 
-	struct ndpip_listening_key key = {
-		.daddr = sock->local.sin_addr.s_addr,
-		.dport = sock->local.sin_port,
-		.proto = IPPROTO_UDP
-	};
+	uint64_t hash1 = ndpip_socket_listening_hash(sock->local);
+	ndpip_hashtable_del(ndpip_udp_listening_sockets, hash1);
 
-	ndpip_hashtable_del(ndpip_listening_sockets, &key, sizeof(key));
-
-	struct ndpip_established_key key2 = {
-		.saddr = sock->remote.sin_addr.s_addr,
-		.daddr = sock->local.sin_addr.s_addr,
-		.sport = sock->remote.sin_port,
-		.dport = sock->local.sin_port,
-		.proto = IPPROTO_UDP
-	};
-
-	ndpip_hashtable_put(ndpip_established_sockets, &key2, sizeof(key2), udp_sock);
+	uint64_t hash2 = ndpip_socket_established_hash(sock->local, sock->remote);
+	ndpip_hashtable_put(ndpip_udp_established_sockets, hash2, sock);
 
 	return 0;
 }
@@ -109,7 +89,7 @@ int ndpip_udp_feed(struct ndpip_udp_socket *udp_sock, struct sockaddr_in *remote
 		return 0;
 
 	ndpip_pbuf_offset(pb, -(int)sizeof(struct udphdr));
-	ndpip_ring_push(sock->recv_ring, &pb, 1);
+	ndpip_ring_push_one(sock->recv_ring, pb);
     
 	return 2;
 }

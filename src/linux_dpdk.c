@@ -1,4 +1,5 @@
 #include "ndpip/linux_dpdk.h"
+#include "ndpip/socket.h"
 #include "ndpip/workhorse.h"
 
 #include <assert.h>
@@ -8,7 +9,8 @@
 #include <rte_mbuf.h>
 #include <rte_ethdev.h>
 
-#define NDPIP_TODO_NB_MBUF (1 << 15)
+#define NDPIP_TX_NB_MBUF (NDPIP_SOCKET_XMIT_RING_LENGTH + 1024)
+#define NDPIP_RX_NB_MBUF (NDPIP_SOCKET_RECV_RING_LENGTH + 1024)
 #define NDPIP_TODO_MEMPOOL_CACHE_SZ 256
 #define NDPIP_TODO_MBUF_SIZE 3072
 #define NDPIP_TODO_MTU 1500
@@ -117,13 +119,13 @@ int ndpip_linux_dpdk_register_iface(int netdev_id)
 		return -1;
 	}
 
-	(&iface)->iface_pbuf_pool_rx = (void *) rte_pktmbuf_pool_create("ndpip_pool_rx", NDPIP_TODO_NB_MBUF, NDPIP_TODO_MEMPOOL_CACHE_SZ, NDPIP_LINUX_DPDK_MBUF_PRIVATE, NDPIP_TODO_MBUF_SIZE, rte_socket_id());
+	(&iface)->iface_pbuf_pool_rx = (void *) rte_pktmbuf_pool_create("ndpip_pool_rx", NDPIP_RX_NB_MBUF, NDPIP_TODO_MEMPOOL_CACHE_SZ, NDPIP_LINUX_DPDK_MBUF_PRIVATE, NDPIP_TODO_MBUF_SIZE, rte_socket_id());
 	if ((&iface)->iface_pbuf_pool_rx == NULL) {
 		perror("rte_pktmbuf_pool_create");
 		return -1;
 	}
 
-	(&iface)->iface_pbuf_pool_tx = (void *) rte_pktmbuf_pool_create("ndpip_pool_tx", NDPIP_TODO_NB_MBUF, NDPIP_TODO_MEMPOOL_CACHE_SZ, NDPIP_LINUX_DPDK_MBUF_PRIVATE, NDPIP_TODO_MBUF_SIZE, rte_socket_id());
+	(&iface)->iface_pbuf_pool_tx = (void *) rte_pktmbuf_pool_create("ndpip_pool_tx", NDPIP_TX_NB_MBUF, NDPIP_TODO_MEMPOOL_CACHE_SZ, NDPIP_LINUX_DPDK_MBUF_PRIVATE, NDPIP_TODO_MBUF_SIZE, rte_socket_id());
 	if ((&iface)->iface_pbuf_pool_tx == NULL) {
 		perror("rte_pktmbuf_pool_create");
 		return -1;
@@ -203,12 +205,10 @@ int ndpip_linux_dpdk_iface_rx_burst(struct ndpip_iface *iface, struct ndpip_pbuf
 
 	uint16_t tmp_cnt = *cnt;
 
-	for (int i = 0; i < NDPIP_LINUX_DPDK_RX_BURST_RETRIES; i++) {
-		uint16_t r_cnt = rte_eth_rx_burst(iface_linux_dpdk->iface_netdev_id, iface_linux_dpdk->iface_rx_queue_id, mb, tmp_cnt);
-		if (r_cnt > 0) {
-			*cnt = r_cnt;
-			return 0;
-		}
+	uint16_t r_cnt = rte_eth_rx_burst(iface_linux_dpdk->iface_netdev_id, iface_linux_dpdk->iface_rx_queue_id, mb, tmp_cnt);
+	if (r_cnt > 0) {
+		*cnt = r_cnt;
+		return 0;
 	}
 
 	return -1;

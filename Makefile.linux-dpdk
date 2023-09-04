@@ -16,7 +16,6 @@ LIB = libndpip.a
 PC = ndpip.pc
 
 CFLAGS ?=
-CFLAGS += -O3
 CFLAGS += -Wall
 CFLAGS += -Werror
 CFLAGS += -Wno-address-of-packed-member
