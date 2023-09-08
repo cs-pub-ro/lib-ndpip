@@ -739,12 +739,18 @@ int ndpip_tcp_feed(struct ndpip_tcp_socket *tcp_sock, struct sockaddr_in *remote
 		if (th_flags != TH_ACK)
 			goto err;
 
+		if (data_len != 0)
+			goto err;
+
 		tcp_sock->state = CONNECTED;
 		return 0;
 	}
 
 	if (tcp_state == CONNECTED) {
 		if ((th_flags == TH_FIN) || (th_flags == (TH_FIN | TH_ACK))) {
+			if (data_len != 0)
+				goto err;
+
 			printf("CONNECTED -> CLOSE_WAIT\n");
 			tcp_sock->state = CLOSE_WAIT;
 			tcp_sock->tcp_rsp_ack = true;

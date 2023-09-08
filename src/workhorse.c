@@ -158,16 +158,17 @@ int ndpip_rx_thread(void *argp)
 				goto free_pkt;
 
 			uint8_t protocol = iph->protocol;
+			uint16_t iph_hlen = iph->ihl << 2;
+			pbuf_len = ntohs(iph->tot_len) - iph_hlen;
 
-			ndpip_pbuf_offset(pb, -(int) sizeof(struct iphdr));
-			ndpip_pbuf_resize(pb, ntohs(iph->tot_len) - (iph->ihl << 2));
+			ndpip_pbuf_offset(pb, -(int) iph_hlen);
+			ndpip_pbuf_resize(pb, pbuf_len);
 
 			if (protocol == IPPROTO_TCP) {
-				if (pbuf_len < (sizeof(struct ethhdr) + sizeof(struct iphdr) + sizeof(struct tcphdr)))
+				if (pbuf_len < sizeof(struct tcphdr))
 					goto free_pkt;
 
 				struct tcphdr *th = ndpip_pbuf_data(pb);
-
 #ifndef NDPIP_DEBUG_NO_CKSUM
 				if (ndpip_iface_has_offload(iface, NDPIP_IFACE_OFFLOAD_RX_TCPV4_CSUM)) {
 					if (ndpip_pbuf_has_flag(pb, NDPIP_PBUF_F_RX_L4_CSUM_BAD))
@@ -203,12 +204,12 @@ int ndpip_rx_thread(void *argp)
 					tcp_sock->rx_loop_seen = true;
 				}
 
-				if (ndpip_tcp_feed(tcp_sock, &remote, pb, pbuf_len - sizeof(struct ethhdr) - sizeof(struct iphdr)) == 1)
+				if (ndpip_tcp_feed(tcp_sock, &remote, pb, pbuf_len) == 1)
 					continue;
 			}
 
 			if (protocol == IPPROTO_UDP) {
-				if (pbuf_len < (sizeof(struct ethhdr) + sizeof(struct iphdr) + sizeof(struct udphdr)))
+				if (pbuf_len < sizeof(struct udphdr))
 					goto free_pkt;
 
 				struct udphdr *uh = ndpip_pbuf_data(pb);
