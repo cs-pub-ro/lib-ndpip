@@ -641,7 +641,7 @@ int ndpip_tcp_feed(struct ndpip_tcp_socket *tcp_sock, struct sockaddr_in *remote
 			// Out of order or unseen segment
 			//printf("Segment sequence: seq=%u;\n", tcp_seq);
 			if (tcp_seq != tcp_sock->tcp_ack) {
-				printf("Out of order or unseen segment: seq=%u; expected_seq=%u;\n", tcp_seq, tcp_sock->tcp_ack);
+				//printf("ndpip_tcp_feed: Out of order or unseen segment: seq=%u; expected_seq=%u;\n", tcp_seq, tcp_sock->tcp_ack);
 				tcp_sock->tcp_rsp_ack = true;
 				return 0;
 			}
@@ -651,7 +651,7 @@ int ndpip_tcp_feed(struct ndpip_tcp_socket *tcp_sock, struct sockaddr_in *remote
 			uint32_t tcp_last_ack = tcp_sock->tcp_last_ack;
 			// Bad ACK
 			if ((tcp_ack - tcp_last_ack) > (tcp_sock->tcp_seq - tcp_last_ack)) {
-				printf("Bad ACK\n");
+				//printf("ndpip_tcp_feed: Bad ACK\n");
 				return 0;
 			}
 
@@ -659,7 +659,7 @@ int ndpip_tcp_feed(struct ndpip_tcp_socket *tcp_sock, struct sockaddr_in *remote
 			tcp_sock->tcp_req_ack = true;
 			tcp_sock->tcp_can_free += tcp_ack - tcp_last_ack;
 			tcp_sock->tcp_last_ack = tcp_ack;
-			tcp_sock->tcp_max_seq = tcp_ack + (ntohs(th->th_win) << tcp_sock->tcp_send_win_scale);
+			tcp_sock->tcp_max_seq = tcp_ack + (((uint32_t) ntohs(th->th_win)) << tcp_sock->tcp_send_win_scale);
 		}
 	}
 
