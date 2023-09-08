@@ -68,8 +68,7 @@ int ndpip_linux_dpdk_register_iface(int netdev_id)
 	(&iface)->iface_tx_queue_id = 0;
 
 	memset(&(&iface)->iface_conf, 0, sizeof(struct rte_eth_conf));
-        (&iface)->iface_conf.rxmode.max_lro_pkt_size = NDPIP_TODO_MTU;
-//        (&iface)->iface_conf.rxmode.mtu = NDPIP_TODO_MTU;
+        (&iface)->iface_conf.rxmode.mtu = NDPIP_TODO_MTU;
 
 	if (rte_eth_dev_info_get((&iface)->iface_netdev_id, &(&iface)->iface_dev_info) < 0) {
 		perror("rte_eth_dev_info_get");
