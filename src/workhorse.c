@@ -130,7 +130,7 @@ int ndpip_rx_thread(void *argp)
 			if (ntohs(eth->h_proto) != ETH_P_IP)
 				goto free_pkt;
 
-			ndpip_pbuf_offset(pb, -(int) sizeof(struct ethhdr));
+			assert(ndpip_pbuf_offset(pb, -(int) sizeof(struct ethhdr)) >= 0);
 
 			if (pbuf_len < (sizeof(struct ethhdr) + sizeof(struct iphdr)))
 				goto free_pkt;
@@ -161,8 +161,8 @@ int ndpip_rx_thread(void *argp)
 			uint16_t iph_hlen = iph->ihl << 2;
 			pbuf_len = ntohs(iph->tot_len) - iph_hlen;
 
-			ndpip_pbuf_offset(pb, -(int) iph_hlen);
-			ndpip_pbuf_resize(pb, pbuf_len);
+			assert(ndpip_pbuf_offset(pb, -(int) iph_hlen) >= 0);
+			assert(ndpip_pbuf_resize(pb, pbuf_len) >= 0);
 
 			if (protocol == IPPROTO_TCP) {
 				if (pbuf_len < sizeof(struct tcphdr))

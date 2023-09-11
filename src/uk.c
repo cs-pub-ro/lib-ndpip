@@ -113,7 +113,7 @@ static void ndpip_uk_rx_thread(void *argp)
 			if (sock == NULL)
 				continue;
 
-			ndpip_pbuf_offset(pb, -(int) (sizeof(struct ethhdr) + sizeof(struct iphdr)));
+			assert(ndpip_pbuf_offset(pb, -(int) (sizeof(struct ethhdr) + sizeof(struct iphdr))) >= 0);
 			int r = ndpip_tcp_feed(sock, &remote, pb, replies[replies_len]);
 			if (r > 0)
 				replies_len++;

@@ -88,7 +88,7 @@ int ndpip_udp_feed(struct ndpip_udp_socket *udp_sock, struct sockaddr_in *remote
 	if (ndpip_pbuf_length(pb) <= sizeof(struct udphdr))
 		return 0;
 
-	ndpip_pbuf_offset(pb, -(int)sizeof(struct udphdr));
+	assert(ndpip_pbuf_offset(pb, -(int) sizeof(struct udphdr)) >= 0);
 	ndpip_ring_push_one(sock->recv_ring, pb);
     
 	return 2;
@@ -137,7 +137,7 @@ int ndpip_udp_send(struct ndpip_udp_socket *udp_sock, struct ndpip_pbuf **pb, ui
 	for (uint16_t idx = 0; idx < cnt; idx++) {
 		uint16_t data_len = ndpip_pbuf_length(pb[idx]);
 
-		ndpip_pbuf_offset(pb[idx], sizeof(udp_sock->xmit_template));
+		assert(ndpip_pbuf_offset(pb[idx], sizeof(udp_sock->xmit_template)) >= 0);
 		memcpy(ndpip_pbuf_data(pb[idx]), udp_sock->xmit_template, sizeof(udp_sock->xmit_template));
 
 		struct iphdr *iph = ndpip_pbuf_data(pb[idx]) + sizeof(struct ethhdr);

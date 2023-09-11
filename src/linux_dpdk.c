@@ -239,10 +239,10 @@ int ndpip_linux_dpdk_pbuf_offset(struct ndpip_pbuf *pbuf, int off)
 	struct rte_mbuf *mb = (void *) pbuf;
 
 	if (off < 0)
-		rte_pktmbuf_adj(mb, (uint16_t) -off);
+		return rte_pktmbuf_adj(mb, (uint16_t) -off) == NULL ? -1 : 0;
 
 	if (off > 0)
-		rte_pktmbuf_prepend(mb, (uint16_t) off);
+		return rte_pktmbuf_prepend(mb, (uint16_t) off) == NULL ? -1 : 0;
 
 	return 0;
 }
@@ -252,10 +252,10 @@ int ndpip_linux_dpdk_pbuf_resize(struct ndpip_pbuf *pbuf, uint16_t len)
 	uint16_t pkt_len = ndpip_pbuf_length(pbuf);
 
 	if (len < pkt_len)
-		rte_pktmbuf_trim(mb, pkt_len - len);
+		return rte_pktmbuf_trim(mb, pkt_len - len);
 
 	if (len > pkt_len)
-		rte_pktmbuf_append(mb, len - pkt_len);
+		return rte_pktmbuf_append(mb, len - pkt_len) == NULL ? - 1 : 0;
 
 	return 0;
 }

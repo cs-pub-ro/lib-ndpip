@@ -198,11 +198,11 @@ static int ndpip_tcp_build_xmit_template(struct ndpip_tcp_socket *tcp_sock)
 static int ndpip_tcp_build_meta(struct ndpip_tcp_socket *tcp_sock, uint8_t th_flags, struct ndpip_pbuf *pb)
 {
 	if (th_flags & TH_SYN) {
-		ndpip_pbuf_resize(pb, sizeof(struct ethhdr) + sizeof(struct iphdr) +
+		assert(ndpip_pbuf_resize(pb, sizeof(struct ethhdr) + sizeof(struct iphdr) +
 			sizeof(struct tcphdr) + sizeof(struct ndpip_tcp_option_mss) +
-			sizeof(struct ndpip_tcp_option_scale) + sizeof(struct ndpip_tcp_option_nop));
+			sizeof(struct ndpip_tcp_option_scale) + sizeof(struct ndpip_tcp_option_nop)) >= 0);
 	} else
-		ndpip_pbuf_resize(pb, sizeof(struct ethhdr) + sizeof(struct iphdr) + sizeof(struct tcphdr));
+		assert(ndpip_pbuf_resize(pb, sizeof(struct ethhdr) + sizeof(struct iphdr) + sizeof(struct tcphdr)) >= 0);
 
 	struct ethhdr *eth = ndpip_pbuf_data(pb);
 	memcpy((void *) eth, tcp_sock->xmit_template, sizeof(tcp_sock->xmit_template));
@@ -384,7 +384,7 @@ int ndpip_tcp_close(struct ndpip_tcp_socket *tcp_sock)
 
 static void ndpip_tcp_prepare_send(struct ndpip_tcp_socket *tcp_sock, struct ndpip_pbuf *pb, uint16_t data_len, uint32_t tcp_seq)
 {
-	ndpip_pbuf_offset(pb, sizeof(tcp_sock->xmit_template));
+	assert(ndpip_pbuf_offset(pb, sizeof(tcp_sock->xmit_template)) >= 0);
 	memcpy(ndpip_pbuf_data(pb), tcp_sock->xmit_template, sizeof(tcp_sock->xmit_template));
 
 	struct iphdr *iph = ndpip_pbuf_data(pb) + sizeof(struct ethhdr);
@@ -508,7 +508,7 @@ int ndpip_tcp_send(struct ndpip_tcp_socket *tcp_sock, struct ndpip_pbuf **pb, ui
 		printf("%hu\n", seg_len);
 		split_pb = ndpip_pbuf_copy(pb[idx], ndpip_iface_get_pbuf_pool_tx(sock->iface), 0, seg_len);
 		ndpip_tcp_prepare_send(tcp_sock, split_pb);
-		ndpip_pbuf_offset(pb[idx], -seg_len);
+		assert(ndpip_pbuf_offset(pb[idx], -seg_len) >= 0);
 
 		idx++;
 
@@ -767,7 +767,7 @@ int ndpip_tcp_feed(struct ndpip_tcp_socket *tcp_sock, struct sockaddr_in *remote
 
 		tcp_sock->tcp_rsp_ack = true;
 
-		ndpip_pbuf_offset(pb, -th_hlen);
+		assert(ndpip_pbuf_offset(pb, -th_hlen) >= 0);
 		ndpip_ring_push_one(sock->recv_ring, pb);
 
 		return 1;

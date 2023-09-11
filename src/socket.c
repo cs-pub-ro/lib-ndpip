@@ -29,7 +29,7 @@ int ndpip_socket_grants_get(struct ndpip_socket *sock, uint32_t grants) {
 	if (ndpip_sock_alloc(sock, &pb, 1, false) < 0)
 		return -1;
 
-	ndpip_pbuf_resize(pb, sizeof(struct ethhdr) + sizeof(struct eqds_cn));
+	assert(ndpip_pbuf_offset(pb, sizeof(struct ethhdr) + sizeof(struct eqds_cn)) >= 0);
 
 	struct ethhdr *eth = ndpip_pbuf_data(pb);
 
