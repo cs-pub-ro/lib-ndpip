@@ -46,11 +46,11 @@ enum ndpip_iface_offload {
 };
 
 struct ndpip_pbuf_pool *ndpip_linux_dpdk_pbuf_pool_alloc(size_t pbuf_count, uint16_t pbuf_size, size_t pbuf_allign, uint16_t pbuf_headroom);
-int ndpip_linux_dpdk_pbuf_pool_request(struct ndpip_pbuf_pool *pool, struct ndpip_pbuf **pb, uint16_t *count);
-int ndpip_linux_dpdk_pbuf_pool_release(struct ndpip_pbuf_pool *pool, struct ndpip_pbuf **pb, uint16_t count);
-int ndpip_linux_dpdk_pbuf_pool_reset(struct ndpip_pbuf_pool *pool, struct ndpip_pbuf **pb, uint16_t count);
+int ndpip_linux_dpdk_pbuf_pool_request(struct ndpip_pbuf_pool *pool, struct ndpip_pbuf **pbs, uint16_t *count);
+int ndpip_linux_dpdk_pbuf_pool_release(struct ndpip_pbuf_pool *pool, struct ndpip_pbuf **pbs, uint16_t count);
+int ndpip_linux_dpdk_pbuf_pool_reset(struct ndpip_pbuf_pool *pool, struct ndpip_pbuf **pbs, uint16_t count);
 
-int ndpip_linux_dpdk_iface_rx_burst(struct ndpip_iface *iface, struct ndpip_pbuf **pb, uint16_t *count);
+int ndpip_linux_dpdk_iface_rx_burst(struct ndpip_iface *iface, struct ndpip_pbuf **pbs, uint16_t *count);
 
 struct ndpip_iface *ndpip_linux_dpdk_iface_get_by_inaddr(struct in_addr addr);
 
@@ -61,7 +61,7 @@ uint16_t ndpip_linux_dpdk_iface_get_mtu(struct ndpip_iface *iface);
 struct ether_addr *ndpip_linux_dpdk_iface_resolve_arp(struct ndpip_iface *iface, struct in_addr peer);
 bool ndpip_linux_dpdk_iface_has_offload(struct ndpip_iface *iface, enum ndpip_iface_offload off);
 
-int ndpip_linux_dpdk_iface_xmit(struct ndpip_iface *iface, struct ndpip_pbuf **pb, uint16_t cnt, bool free);
+int ndpip_linux_dpdk_iface_xmit(struct ndpip_iface *iface, struct ndpip_pbuf **pbs, uint16_t cnt, bool free);
 
 void ndpip_linux_dpdk_usleep(unsigned usec);
 void ndpip_linux_dpdk_timers_usleep(unsigned usec);
@@ -76,7 +76,7 @@ bool ndpip_linux_dpdk_pbuf_has_flag(struct ndpip_pbuf *pb, enum ndpip_pbuf_flag 
 void ndpip_linux_dpdk_pbuf_set_flag(struct ndpip_pbuf *pb, enum ndpip_pbuf_flag flag, bool val);
 void ndpip_linux_dpdk_pbuf_set_l2_len(struct ndpip_pbuf *pb,uint16_t val);
 void ndpip_linux_dpdk_pbuf_set_l3_len(struct ndpip_pbuf *pb,uint16_t val);
-void ndpip_linux_dpdk_pbuf_refcount_add(struct ndpip_pbuf *pb, int16_t val);
+void ndpip_linux_dpdk_pbuf_refcount_update(struct ndpip_pbuf *pb, int16_t val);
 
 uint16_t ndpip_linux_dpdk_iface_get_burst_size(struct ndpip_iface *iface);
 
@@ -109,9 +109,8 @@ uint16_t ndpip_linux_dpdk_ipv4_udptcp_cksum(struct iphdr *iph, void *l4h);
 #define ndpip_pbuf_offset ndpip_linux_dpdk_pbuf_offset
 #define ndpip_pbuf_resize ndpip_linux_dpdk_pbuf_resize
 #define ndpip_pbuf_refcount_get ndpip_linux_dpdk_pbuf_refcount_get
-#define ndpip_pbuf_refcount_add ndpip_linux_dpdk_pbuf_refcount_add
-#define ndpip_pbuf_refcount_sub ndpip_linux_dpdk_pbuf_refcount_sub
 #define ndpip_pbuf_refcount_set ndpip_linux_dpdk_pbuf_refcount_set
+#define ndpip_pbuf_refcount_update ndpip_linux_dpdk_pbuf_refcount_update
 #define ndpip_pbuf_copy ndpip_linux_dpdk_pbuf_copy
 
 #define ndpip_pbuf_pool_alloc ndpip_linux_dpdk_pbuf_pool_alloc

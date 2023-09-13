@@ -86,15 +86,11 @@ static int ndpip_tcp_fin(struct ndpip_tcp_socket *tcp_sock)
 {
 	struct ndpip_pbuf *pb;
 
-	if (ndpip_sock_alloc(&tcp_sock->socket, &pb, 1, false) < 0) {
-		errno = EFAULT;
+	if (ndpip_sock_alloc(&tcp_sock->socket, &pb, 1, false) < 0)
 		return -1;
-	}
 
-	if (ndpip_tcp_build_meta(tcp_sock, TH_FIN, pb) < 0) {
-		errno = EFAULT;
+	if (ndpip_tcp_build_meta(tcp_sock, TH_FIN, pb) < 0)
 		return -1;
-	}
 
 	ndpip_tcp_send_one(tcp_sock, pb);
 	return 0;
@@ -283,6 +279,7 @@ void ndpip_tcp_rto_handler(void *argp) {
 	}
 #endif
 	ndpip_iface_xmit(sock->iface, &pb, 1, false);
+	//ndpip_iface_xmit(sock->iface, &pb, 1, true);
 
 	if (!ndpip_timer_armed(tcp_sock->timer_rto))
 		ndpip_timer_arm_after(tcp_sock->timer_rto, NDPIP_TODO_TCP_RETRANSMIT_TIMEOUT);
@@ -329,7 +326,7 @@ int ndpip_tcp_close(struct ndpip_tcp_socket *tcp_sock)
 {
 	int ret = 0;
 
-	printf("tcp_sock->state=%d;\n", tcp_sock->state);
+	//printf("tcp_sock->state=%d;\n", tcp_sock->state);
 
 	switch (tcp_sock->state) {
 		case CONNECTING:
@@ -343,7 +340,6 @@ int ndpip_tcp_close(struct ndpip_tcp_socket *tcp_sock)
 
 		case ACCEPTING:
 		case CONNECTED:
-			printf("%d -> FIN_WAIT_1\n", tcp_sock->state);
 			tcp_sock->state = FIN_WAIT_1;
 			ret = ndpip_tcp_fin(tcp_sock);
 
@@ -468,7 +464,8 @@ int ndpip_tcp_send(struct ndpip_tcp_socket *tcp_sock, struct ndpip_pbuf **pb, ui
 	uint16_t burst_size = ndpip_iface_get_burst_size(sock->iface);
 	cnt = cnt < burst_size ? cnt : burst_size;
 
-	size_t xmit_ring_free = ndpip_ring_free(sock->xmit_ring);
+	struct ndpip_ring *xmit_ring = sock->xmit_ring;
+	size_t xmit_ring_free = ndpip_ring_free(xmit_ring);
 	if (xmit_ring_free == 0) {
 		ndpip_tcp_free_acked(tcp_sock);
 		return 0;
@@ -519,13 +516,15 @@ int ndpip_tcp_send(struct ndpip_tcp_socket *tcp_sock, struct ndpip_pbuf **pb, ui
 	}
 	*/
 
-	ndpip_ring_push(sock->xmit_ring, pb, idx);
-	ndpip_iface_xmit(sock->iface, pb, idx, false);
-	//ndpip_iface_xmit(sock->iface, pb, idx, true);
-	tcp_sock->tcp_seq = tcp_seq;
+	if (idx > 0) {
+		ndpip_ring_push(xmit_ring, pb, idx);
+		ndpip_iface_xmit(sock->iface, pb, idx, false);
+		//ndpip_iface_xmit(sock->iface, pb, idx, true);
+		tcp_sock->tcp_seq = tcp_seq;
 
-	//printf("TCP-send: xmit_ring_size=%lu;\n", ndpip_ring_size(sock->xmit_ring));
+	}
 
+	//printf("TCP-send: xmit_ring_size=%lu;\n", ndpip_ring_size(xmit_ring));
 	return idx;
 }
 
@@ -554,6 +553,7 @@ static int ndpip_tcp_send_one(struct ndpip_tcp_socket *tcp_sock, struct ndpip_pb
 	}
 
 	ndpip_iface_xmit(sock->iface, &pb, 1, false);
+	//ndpip_iface_xmit(sock->iface, &pb, 1, true);
 	tcp_sock->tcp_seq++;
 
 	return 0;
@@ -591,7 +591,7 @@ void ndpip_tcp_free_acked(struct ndpip_tcp_socket *tcp_sock)
 		exit(0);
 		*/
 
-	if (idx != 0) {
+	if (idx > 0) {
 		ndpip_sock_free(sock, pbs, idx, false);
 		ndpip_ring_flush(xmit_ring, idx);
 		tcp_sock->tcp_can_free -= freed_len;
@@ -751,7 +751,7 @@ int ndpip_tcp_feed(struct ndpip_tcp_socket *tcp_sock, struct sockaddr_in *remote
 			if (data_len != 0)
 				goto err;
 
-			printf("CONNECTED -> CLOSE_WAIT\n");
+			//printf("CONNECTED -> CLOSE_WAIT\n");
 			tcp_sock->state = CLOSE_WAIT;
 			tcp_sock->tcp_rsp_ack = true;
 

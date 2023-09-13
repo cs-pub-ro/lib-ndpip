@@ -398,9 +398,6 @@ int ndpip_free(int sockfd, struct ndpip_pbuf **pb, uint16_t len) {
 		return -1;
 	}
 
-	if (len == 0)
-		return 0;
-
 	return ndpip_sock_free(sock, pb, len, true);
 }
 
@@ -467,6 +464,9 @@ int ndpip_sock_free(struct ndpip_socket *sock, struct ndpip_pbuf **pb, uint16_t 
 {
 	struct ndpip_pbuf_pool *pool = NULL;
 	
+	if (len == 0)
+		return 0;
+
 	if (rx)
 		pool = ndpip_iface_get_pbuf_pool_rx(sock->iface);
 	else

@@ -16,6 +16,7 @@ struct ndpip_arp_peer {
 
 int ndpip_linux_dpdk_register_iface(int netdev_id);
 int ndpip_linux_dpdk_start_iface(int netdev_id);
+int ndpip_linux_dpdk_stop_iface(int netdev_id);
 
 int ndpip_linux_dpdk_set_ethaddr(int netdev_id, struct ether_addr iface_ethaddr);
 int ndpip_linux_dpdk_set_inaddr(int netdev_id, struct in_addr iface_inaddr);
