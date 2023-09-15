@@ -89,7 +89,7 @@ int ndpip_udp_feed(struct ndpip_udp_socket *udp_sock, struct sockaddr_in *remote
 		return 0;
 
 	assert(ndpip_pbuf_offset(pb, -(int) sizeof(struct udphdr)) >= 0);
-	ndpip_ring_push_one(sock->recv_ring, pb);
+	assert(ndpip_ring_push_one(sock->recv_ring, pb) >= 0);
     
 	return 2;
 }
@@ -154,9 +154,6 @@ int ndpip_udp_send(struct ndpip_udp_socket *udp_sock, struct ndpip_pbuf **pb, ui
 #ifndef NDPIP_DEBUG_NO_CKSUM
 		ndpip_udp_prepare_pbuf(udp_sock, pb[idx], iph, uh);
 #endif
-
-		struct ndpip_pbuf_meta *pm = ndpip_pbuf_metadata(pb[idx]);
-		pm->xmit_time = now;
 	}
 
 	ndpip_iface_xmit(sock->iface, pb, cnt, true);

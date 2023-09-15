@@ -55,8 +55,8 @@ struct ndpip_socket {
 
 struct ndpip_socket *ndpip_socket_new(int domain, int type, int protocol);
 struct ndpip_socket *ndpip_socket_accept(struct ndpip_socket *sock);
-int ndpip_sock_free(struct ndpip_socket *sock, struct ndpip_pbuf **pb, uint16_t len, bool rx);
-int ndpip_sock_alloc(struct ndpip_socket *sock, struct ndpip_pbuf **pb, uint16_t len, bool rx);
+int ndpip_sock_free(struct ndpip_socket *sock, struct ndpip_pbuf **pb, size_t len, bool rx);
+int ndpip_sock_alloc(struct ndpip_socket *sock, struct ndpip_pbuf **pb, size_t len, bool rx);
 struct ndpip_socket *ndpip_socket_get_by_peer(struct sockaddr_in local, struct sockaddr_in remote, int protocol);
 uint64_t ndpip_socket_listening_hash(struct sockaddr_in local);
 uint64_t ndpip_socket_established_hash(struct sockaddr_in local, struct sockaddr_in remote);

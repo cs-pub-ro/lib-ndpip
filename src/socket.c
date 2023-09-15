@@ -386,7 +386,7 @@ int ndpip_send(int sockfd, struct ndpip_pbuf **pb, uint16_t count)
 	return -1;
 }
 
-int ndpip_free(int sockfd, struct ndpip_pbuf **pb, uint16_t len) {
+int ndpip_free(int sockfd, struct ndpip_pbuf **pb, size_t len) {
 	if (sockfd < 0) {
 		errno = EBADF;
 		return -1;
@@ -401,7 +401,7 @@ int ndpip_free(int sockfd, struct ndpip_pbuf **pb, uint16_t len) {
 	return ndpip_sock_free(sock, pb, len, true);
 }
 
-int ndpip_alloc(int sockfd, struct ndpip_pbuf **pb, uint16_t len) {
+int ndpip_alloc(int sockfd, struct ndpip_pbuf **pb, size_t len) {
 	if (sockfd < 0) {
 		errno = EBADF;
 		return -1;
@@ -460,7 +460,7 @@ int ndpip_cost(int sockfd, struct ndpip_pbuf **pb, uint16_t len, uint16_t *pb_co
 }
 #endif
 
-int ndpip_sock_free(struct ndpip_socket *sock, struct ndpip_pbuf **pb, uint16_t len, bool rx)
+int ndpip_sock_free(struct ndpip_socket *sock, struct ndpip_pbuf **pb, size_t len, bool rx)
 {
 	struct ndpip_pbuf_pool *pool = NULL;
 	
@@ -485,7 +485,7 @@ int ndpip_sock_free(struct ndpip_socket *sock, struct ndpip_pbuf **pb, uint16_t 
 	return 0;
 }
 
-int ndpip_sock_alloc(struct ndpip_socket *sock, struct ndpip_pbuf **pb, uint16_t len, bool rx)
+int ndpip_sock_alloc(struct ndpip_socket *sock, struct ndpip_pbuf **pb, size_t len, bool rx)
 {
 	struct ndpip_pbuf_pool *pool = NULL;
 	
@@ -499,7 +499,7 @@ int ndpip_sock_alloc(struct ndpip_socket *sock, struct ndpip_pbuf **pb, uint16_t
 		return -1;
 	}
 
-	uint16_t tmp_len = len;
+	size_t tmp_len = len;
 	if (ndpip_pbuf_pool_request(pool, pb, &tmp_len) < 0)
 		goto ret_err;
 

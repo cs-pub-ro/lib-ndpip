@@ -76,7 +76,7 @@ int ndpip_rx_thread(void *argp)
 		uint16_t replies_len = 0;
 		struct ndpip_pbuf *replies[pkt_cnt * 2];
 
-		uint16_t tmp_pkt_cnt = pkt_cnt;
+		size_t tmp_pkt_cnt = pkt_cnt;
 		assert(ndpip_pbuf_pool_request(ndpip_iface_get_pbuf_pool_tx(iface), replies, &tmp_pkt_cnt) >= 0);
 		assert(tmp_pkt_cnt == pkt_cnt);
 

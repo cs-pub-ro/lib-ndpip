@@ -256,14 +256,14 @@ void ndpip_tcp_rto_handler(void *argp) {
 	struct ndpip_pbuf *pb;
 	size_t cnt = 1;
 
-	ndpip_tcp_free_acked(tcp_sock);
 	if (tcp_sock->tcp_seq == tcp_sock->tcp_last_ack)
 		goto ret_no_rto;
 
+	ndpip_tcp_free_acked(tcp_sock);
 	if (ndpip_ring_peek(sock->xmit_ring, &cnt, &pb) < 0)
 		goto ret_no_rto;
 
-	//printf("TCP-rto: xmit_ring_size=%lu;\n", ndpip_ring_size(sock->xmit_ring));
+	//printf("rto2: xmit_ring_size=%lu;\n", ndpip_ring_size(sock->xmit_ring));
 	tcp_sock->tcp_rto = true;
 
 #ifdef NDPIP_GRANTS_ENABLE
@@ -342,6 +342,8 @@ int ndpip_tcp_close(struct ndpip_tcp_socket *tcp_sock)
 		case CONNECTED:
 			tcp_sock->state = FIN_WAIT_1;
 			ret = ndpip_tcp_fin(tcp_sock);
+			if (ret < 0)
+				return -1;
 
 			while (tcp_sock->state != TIME_WAIT)
 				ndpip_usleep(1);
@@ -353,6 +355,8 @@ int ndpip_tcp_close(struct ndpip_tcp_socket *tcp_sock)
 		case CLOSE_WAIT:
 			tcp_sock->state = LAST_ACK;
 			ret = ndpip_tcp_fin(tcp_sock);
+			if (ret < 0)
+				return -1;
 
 			while (tcp_sock->state != CLOSED)
 				ndpip_usleep(1);
@@ -370,10 +374,9 @@ int ndpip_tcp_close(struct ndpip_tcp_socket *tcp_sock)
 		case CLOSING:
 		case CLOSED:
 		default:
+			break;
 	}
 
-	if (ret < 0)
-		return -1;
 
 	return 0;
 }
@@ -517,7 +520,7 @@ int ndpip_tcp_send(struct ndpip_tcp_socket *tcp_sock, struct ndpip_pbuf **pb, ui
 	*/
 
 	if (idx > 0) {
-		ndpip_ring_push(xmit_ring, pb, idx);
+		assert(ndpip_ring_push(xmit_ring, pb, idx) >= 0);
 		ndpip_iface_xmit(sock->iface, pb, idx, false);
 		//ndpip_iface_xmit(sock->iface, pb, idx, true);
 		tcp_sock->tcp_seq = tcp_seq;
@@ -563,7 +566,9 @@ void ndpip_tcp_free_acked(struct ndpip_tcp_socket *tcp_sock)
 {
 	struct ndpip_socket *sock = &tcp_sock->socket;
 
-	size_t idx, freed_len, tcp_can_free = tcp_sock->tcp_can_free;
+	size_t tcp_can_free = tcp_sock->tcp_can_free;
+	//printf("free_acked1: tcp_can_free=%lu;\n", tcp_sock->tcp_can_free);
+	//printf("free_acked2: xmit_ring_size=%lu;\n", xmit_ring_size);
 	if (tcp_can_free == 0)
 		return;
 
@@ -572,10 +577,12 @@ void ndpip_tcp_free_acked(struct ndpip_tcp_socket *tcp_sock)
 	if (xmit_ring_size == 0)
 		return;
 
+	//printf("free_acked3\n");
 	struct ndpip_pbuf **pbs = malloc(xmit_ring_size * sizeof(struct ndpip_pbuf *));
 	ndpip_ring_peek(xmit_ring, &xmit_ring_size, pbs);
 
 	//printf("ndpip_tcp_free_acked: data_len=[");
+	size_t idx, freed_len;
 	for (idx = 0, freed_len = 0; idx < xmit_ring_size; idx++) {
 		uint16_t data_len = ndpip_pbuf_metadata(pbs[idx])->data_len;
 		//printf("%hu ", data_len);
@@ -591,14 +598,39 @@ void ndpip_tcp_free_acked(struct ndpip_tcp_socket *tcp_sock)
 		exit(0);
 		*/
 
+	//printf("free_acked4: %lu\n", idx);
+
 	if (idx > 0) {
+		/*
+		static uint32_t ack;
+		static bool init = false;
+		for (size_t idx2 = 0; idx2 < idx; idx2++) {
+			struct iphdr *iph = (struct iphdr *) (ndpip_pbuf_data(pbs[idx2]) + sizeof(struct ethhdr));
+			struct tcphdr *th = (void *) (iph + 1);
+
+			uint16_t data_len = ntohs(iph->tot_len) - (iph->ihl << 2) - (th->th_off << 2);
+			uint32_t th_seq = ntohl(th->th_seq);
+
+			if (init)
+				init = true;
+			else {
+				if (th_seq != ack) {
+					printf("ndpip_free_acked: at idx=%lu ack=%u != seq=%u\n", idx2, ack, th_seq);
+					exit(-1);
+				}
+			}
+
+			ack = th_seq + ((th->th_flags == TH_ACK) ? data_len : 1);
+		}
+		*/
+
 		ndpip_sock_free(sock, pbs, idx, false);
 		ndpip_ring_flush(xmit_ring, idx);
 		tcp_sock->tcp_can_free -= freed_len;
 	}
 
 	free(pbs);
-	//printf("Free ACKed: xmit_ring_size=%lu; freed_len=%lu; tcp_can_free=%u;\n", xmit_ring_size, freed_len, tcp_sock->tcp_can_free);
+	//printf("free_acked5: xmit_ring_size=%lu; freed_len=%lu; tcp_can_free=%lu;\n", ndpip_ring_size(xmit_ring), freed_len, tcp_sock->tcp_can_free);
 }
 
 int ndpip_tcp_flush(struct ndpip_tcp_socket *tcp_sock, struct ndpip_pbuf *rpb)
@@ -768,7 +800,7 @@ int ndpip_tcp_feed(struct ndpip_tcp_socket *tcp_sock, struct sockaddr_in *remote
 		tcp_sock->tcp_rsp_ack = true;
 
 		assert(ndpip_pbuf_offset(pb, -th_hlen) >= 0);
-		ndpip_ring_push_one(sock->recv_ring, pb);
+		assert(ndpip_ring_push_one(sock->recv_ring, pb) >= 0);
 
 		return 1;
 	}

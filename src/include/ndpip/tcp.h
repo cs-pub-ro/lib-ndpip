@@ -68,7 +68,7 @@ struct ndpip_tcp_socket {
 	bool tcp_req_ack;
 	bool rx_loop_seen;
 
-	uint32_t tcp_can_free;
+	_Atomic size_t tcp_can_free;
 };
 
 int ndpip_tcp_feed(struct ndpip_tcp_socket *tcp_sock, struct sockaddr_in *remote, struct ndpip_pbuf *pb, uint16_t th_len);

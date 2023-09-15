@@ -46,9 +46,9 @@ enum ndpip_iface_offload {
 };
 
 struct ndpip_pbuf_pool *ndpip_linux_dpdk_pbuf_pool_alloc(size_t pbuf_count, uint16_t pbuf_size, size_t pbuf_allign, uint16_t pbuf_headroom);
-int ndpip_linux_dpdk_pbuf_pool_request(struct ndpip_pbuf_pool *pool, struct ndpip_pbuf **pbs, uint16_t *count);
-int ndpip_linux_dpdk_pbuf_pool_release(struct ndpip_pbuf_pool *pool, struct ndpip_pbuf **pbs, uint16_t count);
-int ndpip_linux_dpdk_pbuf_pool_reset(struct ndpip_pbuf_pool *pool, struct ndpip_pbuf **pbs, uint16_t count);
+int ndpip_linux_dpdk_pbuf_pool_request(struct ndpip_pbuf_pool *pool, struct ndpip_pbuf **pbs, size_t *count);
+int ndpip_linux_dpdk_pbuf_pool_release(struct ndpip_pbuf_pool *pool, struct ndpip_pbuf **pbs, size_t count);
+int ndpip_linux_dpdk_pbuf_pool_reset(struct ndpip_pbuf_pool *pool, struct ndpip_pbuf **pbs, size_t count);
 
 int ndpip_linux_dpdk_iface_rx_burst(struct ndpip_iface *iface, struct ndpip_pbuf **pbs, uint16_t *count);
 

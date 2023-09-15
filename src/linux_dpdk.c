@@ -22,14 +22,20 @@ static struct ndpip_linux_dpdk_iface iface = {
 
 static uint64_t tsc_hz;
 
-int ndpip_linux_dpdk_pbuf_pool_request(struct ndpip_pbuf_pool *pool, struct ndpip_pbuf **pbs, uint16_t *count)
+int ndpip_linux_dpdk_pbuf_pool_request(struct ndpip_pbuf_pool *pool, struct ndpip_pbuf **pbs, size_t *count)
 {
 	struct rte_mempool *p = (void *) pool;
 	struct rte_mbuf **mbs = (void *) pbs;
-	uint16_t cnt = *count;
+	uint16_t count_tmp = *count;
 
-	if (rte_pktmbuf_alloc_bulk(p, mbs, cnt) != 0)
-		return -1;
+	for (size_t idx = 0; idx < count_tmp;) {
+		size_t count1 = count_tmp - idx;
+		count1 = count1 < UINT_MAX ? count1 : UINT_MAX;
+		if (rte_pktmbuf_alloc_bulk(p, mbs + idx, count1) != 0)
+			return -1;
+
+		idx += count1;
+	}
 
 	return 0;
 }
@@ -324,14 +330,19 @@ struct ether_addr *ndpip_linux_dpdk_iface_resolve_arp(struct ndpip_iface *iface,
         return NULL;
 }
 
-int ndpip_linux_dpdk_pbuf_pool_release(struct ndpip_pbuf_pool *_, struct ndpip_pbuf **pbs, uint16_t count)
+int ndpip_linux_dpdk_pbuf_pool_release(struct ndpip_pbuf_pool *_, struct ndpip_pbuf **pbs, size_t count)
 {
         if (count == 0)                                                    
                 return 0;
                                                         
 	struct rte_mbuf **mbs = (void *) pbs;
 
-	rte_pktmbuf_free_bulk(mbs, count);
+	for (size_t idx = 0; idx < count;) {
+		size_t count1 = count - idx;
+		count1 = count1 < UINT_MAX ? count1 : UINT_MAX;
+		rte_pktmbuf_free_bulk(mbs + idx, count1);
+		idx += count1;
+	}
 
 	return 0;
 }

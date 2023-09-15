@@ -7,8 +7,7 @@
 #include <time.h>
 
 struct ndpip_pbuf_meta {
-	struct timespec xmit_time;
-	uint32_t data_len;
+	uint16_t data_len;
 };
 
 enum ndpip_pbuf_flag {
