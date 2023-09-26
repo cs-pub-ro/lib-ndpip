@@ -46,6 +46,8 @@ struct ndpip_socket {
 	struct ndpip_ring *xmit_ring;
 	struct ndpip_ring *recv_ring;
 
+	uint16_t mss;
+
 #ifdef NDPIP_GRANTS_ENABLE
 	int64_t grants_overhead;
 	_Atomic int64_t grants;

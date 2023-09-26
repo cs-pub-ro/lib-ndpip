@@ -8,7 +8,6 @@
 
 #define NDPIP_TODO_TCP_RETRANSMIT_COUNT 3
 #define NDPIP_TODO_TCP_WIN_SIZE ((1 << 16) - 1)
-#define NDPIP_TODO_TCP_MSS 1460
 #define NDPIP_TODO_TCP_RETRANSMIT_TIMEOUT ((struct timespec) { .tv_sec = 0, .tv_nsec = 250000000L })
 
 
@@ -193,6 +192,8 @@ static int ndpip_tcp_build_xmit_template(struct ndpip_tcp_socket *tcp_sock)
 
 static int ndpip_tcp_build_meta(struct ndpip_tcp_socket *tcp_sock, uint8_t th_flags, struct ndpip_pbuf *pb)
 {
+	struct ndpip_socket *sock = &tcp_sock->socket;
+
 	if (th_flags & TH_SYN) {
 		assert(ndpip_pbuf_resize(pb, sizeof(struct ethhdr) + sizeof(struct iphdr) +
 			sizeof(struct tcphdr) + sizeof(struct ndpip_tcp_option_mss) +
@@ -220,7 +221,7 @@ static int ndpip_tcp_build_meta(struct ndpip_tcp_socket *tcp_sock, uint8_t th_fl
 		struct ndpip_tcp_option_mss *th_mss = (void *) (th + 1);
 		th_mss->opt.kind = TCPOPT_MAXSEG;
 		th_mss->opt.len = TCPOLEN_MAXSEG;
-		th_mss->mss = htons(NDPIP_TODO_TCP_MSS);
+		th_mss->mss = htons(sock->mss);
 	
 		struct ndpip_tcp_option_scale *th_scale = (void *) (th_mss + 1);
 		th_scale->opt.kind = TCPOPT_WINDOW;
@@ -290,13 +291,21 @@ ret_no_rto:
 	tcp_sock->tcp_rto = false;
 }
 
-static void ndpip_tcp_parse_opts(struct ndpip_tcp_socket *sock, struct tcphdr *th, uint16_t th_hlen)
+static void ndpip_tcp_parse_opts(struct ndpip_tcp_socket *tcp_sock, struct tcphdr *th, uint16_t th_hlen)
 {
+	struct ndpip_socket *sock = &tcp_sock->socket;
+
 	for (size_t idx = sizeof(struct tcphdr); idx < th_hlen;) {
 		struct ndpip_tcp_option *th_opt = ((void *) th) + idx;
+
 		if (th_opt->kind == TCPOPT_WINDOW) {
 			struct ndpip_tcp_option_scale *th_scale = (void *) th_opt;
-			sock->tcp_send_win_scale = th_scale->scale;
+			tcp_sock->tcp_send_win_scale = th_scale->scale;
+		}
+
+		if (th_opt->kind == TCPOPT_MAXSEG) {
+			struct ndpip_tcp_option_mss *th_mss = (void *) th_opt;
+			sock->mss = th_mss->mss;
 		}
 
 		if (th_opt->kind == TCPOPT_NOP)
@@ -723,6 +732,7 @@ int ndpip_tcp_feed(struct ndpip_tcp_socket *tcp_sock, struct sockaddr_in *remote
 		asock->local = sock->local;
 		asock->remote = *remote;
 		asock->iface = ndpip_iface_get_by_inaddr(asock->local.sin_addr);
+		asock->mss = sock->mss;
 		tcp_asock->tcp_recv_win_scale = tcp_sock->tcp_recv_win_scale;
 		tcp_asock->state = ACCEPTING;
 

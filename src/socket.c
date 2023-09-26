@@ -8,6 +8,9 @@
 #include "ndpip/workhorse.h"
 
 
+#define NDPIP_TCP_DEFAULT_MSS (ETH_DATA_LEN - (sizeof(struct ether_header) + sizeof(struct iphdr) + sizeof(struct tcphdr)))
+#define NDPIP_UDP_DEFAULT_MSS (ETH_DATA_LEN - (sizeof(struct ether_header) + sizeof(struct iphdr) + sizeof(struct udphdr)))
+
 #define NDPIP_TODO_ESTABLISHED_SOCKETS_BUCKETS 1024
 #define NDPIP_TODO_LISTENING_SOCKETS_BUCKETS 32
 
@@ -107,6 +110,8 @@ struct ndpip_socket *ndpip_socket_new(int domain, int type, int protocol)
 
 
 	if (protocol == IPPROTO_TCP) {
+		sock->mss = NDPIP_TCP_DEFAULT_MSS;
+
 		struct ndpip_tcp_socket *tcp_sock = (struct ndpip_tcp_socket *) sock;
 		tcp_sock->state = NEW;
 
@@ -128,6 +133,10 @@ struct ndpip_socket *ndpip_socket_new(int domain, int type, int protocol)
 		tcp_sock->tcp_can_free = 0;
 
 		tcp_sock->accept_queue = (struct ndpip_list_head) { &tcp_sock->accept_queue, &tcp_sock->accept_queue };
+	}
+
+	if (protocol == IPPROTO_UDP) {
+		sock->mss = NDPIP_UDP_DEFAULT_MSS;
 	}
 
 	socket_table[socket_id] = sock;
@@ -560,6 +569,26 @@ int ndpip_setsockopt(int sockfd, int level, int optname, const void *optval, soc
 			}
 
 			tcp_sock->tcp_recv_win_scale = *((uint8_t *) optval);
+
+			return 0;
+
+		case TCP_MAXSEG:
+			if (optlen != sizeof(int)) {
+				errno = EINVAL;
+				return -1;
+			}
+
+			int mss = *(int *) optval;
+
+			if ((mss <= 0) ||
+				((mss >= NDPIP_TCP_DEFAULT_MSS) && sock->protocol == IPPROTO_TCP) ||
+				((mss >= NDPIP_UDP_DEFAULT_MSS) && sock->protocol == IPPROTO_UDP)) {
+
+				errno = EINVAL;
+				return -1;
+			}
+
+			sock->mss = mss;
 
 			return 0;
 
