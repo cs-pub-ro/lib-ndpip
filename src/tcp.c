@@ -197,7 +197,7 @@ static int ndpip_tcp_build_meta(struct ndpip_tcp_socket *tcp_sock, uint8_t th_fl
 	if (th_flags & TH_SYN) {
 		assert(ndpip_pbuf_resize(pb, sizeof(struct ethhdr) + sizeof(struct iphdr) +
 			sizeof(struct tcphdr) + sizeof(struct ndpip_tcp_option_mss) +
-			sizeof(struct ndpip_tcp_option_scale) + sizeof(struct ndpip_tcp_option_nop)) >= 0);
+			sizeof(struct ndpip_tcp_option_nop) + sizeof(struct ndpip_tcp_option_scale)) >= 0);
 	} else
 		assert(ndpip_pbuf_resize(pb, sizeof(struct ethhdr) + sizeof(struct iphdr) + sizeof(struct tcphdr)) >= 0);
 
@@ -207,8 +207,8 @@ static int ndpip_tcp_build_meta(struct ndpip_tcp_socket *tcp_sock, uint8_t th_fl
 	struct iphdr *iph = ((void *) eth) + sizeof(struct ethhdr);
 	if (th_flags & TH_SYN) {
 		iph->tot_len = htons(sizeof(struct iphdr) + sizeof(struct tcphdr) +
-			sizeof(struct ndpip_tcp_option_mss) + sizeof(struct ndpip_tcp_option_scale) +
-			sizeof(struct ndpip_tcp_option_nop));
+			sizeof(struct ndpip_tcp_option_mss) + sizeof(struct ndpip_tcp_option_nop) +
+			sizeof(struct ndpip_tcp_option_scale));
 	} else
 		iph->tot_len = htons(sizeof(struct iphdr) + sizeof(struct tcphdr));
 
@@ -223,16 +223,16 @@ static int ndpip_tcp_build_meta(struct ndpip_tcp_socket *tcp_sock, uint8_t th_fl
 		th_mss->opt.len = TCPOLEN_MAXSEG;
 		th_mss->mss = htons(sock->mss);
 	
-		struct ndpip_tcp_option_scale *th_scale = (void *) (th_mss + 1);
+		struct ndpip_tcp_option_nop *th_nop1 = (void *) (th_mss + 1);
+		th_nop1->kind = TCPOPT_NOP;
+
+		struct ndpip_tcp_option_scale *th_scale = (void *) (th_nop1 + 1);
 		th_scale->opt.kind = TCPOPT_WINDOW;
 		th_scale->opt.len = TCPOLEN_WINDOW;
 		th_scale->scale = tcp_sock->tcp_recv_win_scale;
 
-		struct ndpip_tcp_option_nop *th_nop1 = (void *) (th_scale + 1);
-		th_nop1->kind = 1;
-
 		th->th_off = (sizeof(struct tcphdr) + sizeof(struct ndpip_tcp_option_mss) +
-			sizeof(struct ndpip_tcp_option_scale) + sizeof(struct ndpip_tcp_option_nop)) >> 2;
+			sizeof(struct ndpip_tcp_option_nop) + sizeof(struct ndpip_tcp_option_scale)) >> 2;
 	} else
 		th->th_off = sizeof(struct tcphdr) >> 2;
 
