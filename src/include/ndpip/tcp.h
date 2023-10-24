@@ -53,6 +53,8 @@ struct ndpip_tcp_socket {
 
 	struct ndpip_timer *timer_rto;
 
+	uint16_t rx_mss;
+
 	uint32_t tcp_seq;
 	uint32_t tcp_ack;
 	uint32_t tcp_last_ack;

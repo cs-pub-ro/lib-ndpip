@@ -192,8 +192,6 @@ static int ndpip_tcp_build_xmit_template(struct ndpip_tcp_socket *tcp_sock)
 
 static int ndpip_tcp_build_meta(struct ndpip_tcp_socket *tcp_sock, uint8_t th_flags, struct ndpip_pbuf *pb)
 {
-	struct ndpip_socket *sock = &tcp_sock->socket;
-
 	if (th_flags & TH_SYN) {
 		assert(ndpip_pbuf_resize(pb, sizeof(struct ethhdr) + sizeof(struct iphdr) +
 			sizeof(struct tcphdr) + sizeof(struct ndpip_tcp_option_mss) +
@@ -221,7 +219,7 @@ static int ndpip_tcp_build_meta(struct ndpip_tcp_socket *tcp_sock, uint8_t th_fl
 		struct ndpip_tcp_option_mss *th_mss = (void *) (th + 1);
 		th_mss->opt.kind = TCPOPT_MAXSEG;
 		th_mss->opt.len = TCPOLEN_MAXSEG;
-		th_mss->mss = htons(sock->mss);
+		th_mss->mss = htons(tcp_sock->rx_mss);
 	
 		struct ndpip_tcp_option_nop *th_nop1 = (void *) (th_mss + 1);
 		th_nop1->kind = TCPOPT_NOP;
@@ -305,7 +303,8 @@ static void ndpip_tcp_parse_opts(struct ndpip_tcp_socket *tcp_sock, struct tcphd
 
 		if (th_opt->kind == TCPOPT_MAXSEG) {
 			struct ndpip_tcp_option_mss *th_mss = (void *) th_opt;
-			sock->mss = th_mss->mss;
+			uint16_t mss = ntohs(th_mss->mss);
+			sock->tx_mss = mss < sock->tx_mss ? mss : sock->tx_mss;
 		}
 
 		if (th_opt->kind == TCPOPT_NOP)
@@ -732,9 +731,10 @@ int ndpip_tcp_feed(struct ndpip_tcp_socket *tcp_sock, struct sockaddr_in *remote
 		asock->local = sock->local;
 		asock->remote = *remote;
 		asock->iface = ndpip_iface_get_by_inaddr(asock->local.sin_addr);
-		asock->mss = sock->mss;
+		asock->tx_mss = sock->tx_mss;
 		tcp_asock->tcp_recv_win_scale = tcp_sock->tcp_recv_win_scale;
 		tcp_asock->state = ACCEPTING;
+		tcp_asock->rx_mss = tcp_sock->rx_mss;
 
 		ndpip_tcp_parse_opts(tcp_asock, th, th_hlen);
 

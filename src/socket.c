@@ -110,7 +110,7 @@ struct ndpip_socket *ndpip_socket_new(int domain, int type, int protocol)
 
 
 	if (protocol == IPPROTO_TCP) {
-		sock->mss = NDPIP_TCP_DEFAULT_MSS;
+		sock->tx_mss = NDPIP_TCP_DEFAULT_MSS;
 
 		struct ndpip_tcp_socket *tcp_sock = (struct ndpip_tcp_socket *) sock;
 		tcp_sock->state = NEW;
@@ -131,12 +131,13 @@ struct ndpip_socket *ndpip_socket_new(int domain, int type, int protocol)
 		tcp_sock->tcp_req_ack = false;
 		tcp_sock->rx_loop_seen = false;
 		tcp_sock->tcp_can_free = 0;
+		tcp_sock->rx_mss = NDPIP_TCP_DEFAULT_MSS;
 
 		tcp_sock->accept_queue = (struct ndpip_list_head) { &tcp_sock->accept_queue, &tcp_sock->accept_queue };
 	}
 
 	if (protocol == IPPROTO_UDP) {
-		sock->mss = NDPIP_UDP_DEFAULT_MSS;
+		sock->tx_mss = NDPIP_UDP_DEFAULT_MSS;
 	}
 
 	socket_table[socket_id] = sock;
@@ -549,6 +550,9 @@ int ndpip_setsockopt(int sockfd, int level, int optname, const void *optval, soc
 		return -1;
 	}
 
+	struct ndpip_tcp_socket *tcp_sock = (struct ndpip_tcp_socket *) sock;
+	int mss;
+
 	switch (optname) {
 		case SO_NDPIP_TCP_WIN_SCALE:
 			if (sock->protocol != IPPROTO_TCP) {
@@ -561,8 +565,6 @@ int ndpip_setsockopt(int sockfd, int level, int optname, const void *optval, soc
 				return -1;
 			}
 
-			struct ndpip_tcp_socket *tcp_sock = (struct ndpip_tcp_socket *) sock;
-
 			if (tcp_sock->state != NEW) {
 				errno = EINVAL;
 				return -1;
@@ -572,13 +574,13 @@ int ndpip_setsockopt(int sockfd, int level, int optname, const void *optval, soc
 
 			return 0;
 
-		case TCP_MAXSEG:
+		case SO_NDPIP_MAX_TX_SEG:
 			if (optlen != sizeof(int)) {
 				errno = EINVAL;
 				return -1;
 			}
 
-			int mss = *(int *) optval;
+			mss = *(int *) optval;
 
 			if ((mss <= 0) ||
 				((mss >= NDPIP_TCP_DEFAULT_MSS) && sock->protocol == IPPROTO_TCP) ||
@@ -588,7 +590,29 @@ int ndpip_setsockopt(int sockfd, int level, int optname, const void *optval, soc
 				return -1;
 			}
 
-			sock->mss = mss;
+			sock->tx_mss = mss;
+
+			return 0;
+
+		case SO_NDPIP_TCP_MAX_RX_SEG:
+			if (optlen != sizeof(int)) {
+				errno = EINVAL;
+				return -1;
+			}
+
+			if (sock->protocol != IPPROTO_TCP) {
+				errno = EINVAL;
+				return -1;
+			}
+
+			mss = *(int *) optval;
+
+			if ((mss <= 0) || (mss >= NDPIP_TCP_DEFAULT_MSS)) {
+				errno = EINVAL;
+				return -1;
+			}
+
+			tcp_sock->rx_mss = mss;
 
 			return 0;
 
