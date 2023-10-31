@@ -129,8 +129,8 @@ struct ndpip_socket *ndpip_socket_new(int domain, int type, int protocol)
 		tcp_sock->tcp_rto = false;
 		tcp_sock->tcp_rsp_ack = false;
 		tcp_sock->tcp_req_ack = false;
+
 		tcp_sock->rx_loop_seen = false;
-		tcp_sock->tcp_can_free = 0;
 		tcp_sock->rx_mss = NDPIP_TCP_DEFAULT_MSS;
 
 		tcp_sock->accept_queue = (struct ndpip_list_head) { &tcp_sock->accept_queue, &tcp_sock->accept_queue };
@@ -523,11 +523,6 @@ int ndpip_sock_alloc(struct ndpip_socket *sock, struct ndpip_pbuf **pb, size_t l
 	return 0;
 
 ret_err:
-	if ((sock->protocol == IPPROTO_TCP) && !rx) {
-		struct ndpip_tcp_socket *tcp_sock = (void *) sock;
-		ndpip_tcp_free_acked(tcp_sock);
-	}
-
 	errno = EFAULT;
 	return -1;
 }

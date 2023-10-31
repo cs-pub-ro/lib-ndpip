@@ -96,18 +96,10 @@ int ndpip_udp_feed(struct ndpip_udp_socket *udp_sock, struct sockaddr_in *remote
 
 uint16_t ndpip_udp_max_xmit(struct ndpip_udp_socket *udp_sock, struct ndpip_pbuf **pb, uint16_t cnt)
 {
-	struct ndpip_socket *sock = &udp_sock->socket;
-	
-	if (cnt == 0)
-		return 0;
-
 #ifdef NDPIP_GRANTS_ENABLE
 	if (sock->grants_overhead < 0)
 		return 0;
 #endif
-
-	uint16_t burst_size = ndpip_iface_get_burst_size(sock->iface);
-	cnt = cnt < burst_size ? cnt : burst_size;
 
 #ifdef NDPIP_GRANTS_ENABLE
 	int64_t grants_left = sock->grants;
@@ -126,6 +118,9 @@ uint16_t ndpip_udp_max_xmit(struct ndpip_udp_socket *udp_sock, struct ndpip_pbuf
 int ndpip_udp_send(struct ndpip_udp_socket *udp_sock, struct ndpip_pbuf **pb, uint16_t cnt)
 {
 	struct ndpip_socket *sock = &udp_sock->socket;
+
+	if (cnt == 0)
+		return 0;
 
 	cnt = ndpip_udp_max_xmit(udp_sock, pb, cnt);
 	if (cnt == 0)

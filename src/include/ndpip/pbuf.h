@@ -7,7 +7,6 @@
 #include <time.h>
 
 struct ndpip_pbuf_meta {
-	uint16_t data_len;
 };
 
 enum ndpip_pbuf_flag {
