@@ -85,7 +85,7 @@ static int ndpip_tcp_fin(struct ndpip_tcp_socket *tcp_sock)
 {
 	struct ndpip_pbuf *pb;
 
-	if (ndpip_sock_alloc(&tcp_sock->socket, &pb, 1, false) < 0)
+	if (ndpip_sock_alloc(&tcp_sock->socket, &pb, 1, false) == 0)
 		return -1;
 
 	if (ndpip_tcp_build_meta(tcp_sock, TH_FIN, pb) < 0)
@@ -111,7 +111,7 @@ int ndpip_tcp_connect(struct ndpip_tcp_socket *tcp_sock)
 
 	struct ndpip_pbuf *pb;
 	
-	if (ndpip_sock_alloc((struct ndpip_socket *) tcp_sock, &pb, 1, false) < 0) {
+	if (ndpip_sock_alloc((struct ndpip_socket *) tcp_sock, &pb, 1, false) == 0) {
 		errno = EFAULT;
 		return -1;
 	}
@@ -738,7 +738,7 @@ int ndpip_tcp_feed(struct ndpip_tcp_socket *tcp_sock, struct sockaddr_in *remote
 		ndpip_list_add(&tcp_sock->accept_queue, &tcp_asock->accept_queue);
 
 		struct ndpip_pbuf *pb;
-		if (ndpip_sock_alloc((struct ndpip_socket *) tcp_asock, &pb, 1, false) < 0) {
+		if (ndpip_sock_alloc((struct ndpip_socket *) tcp_asock, &pb, 1, false) == 0) {
 			tcp_sock = tcp_asock;
 			goto err;
 		}

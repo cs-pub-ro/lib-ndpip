@@ -30,7 +30,7 @@ bool ndpip_socket_initialized = false;
 int ndpip_socket_grants_get(struct ndpip_socket *sock, uint32_t grants) {
 	struct ndpip_pbuf *pb;
 	
-	if (ndpip_sock_alloc(sock, &pb, 1, false) < 0)
+	if (ndpip_sock_alloc(sock, &pb, 1, false) == 0)
 		return -1;
 
 	assert(ndpip_pbuf_offset(pb, sizeof(struct ethhdr) + sizeof(struct eqds_cn)) >= 0);
@@ -413,7 +413,7 @@ int ndpip_free(int sockfd, struct ndpip_pbuf **pb, size_t len) {
 	return ndpip_sock_free(sock, pb, len, true);
 }
 
-int ndpip_alloc(int sockfd, struct ndpip_pbuf **pb, size_t len) {
+size_t ndpip_alloc(int sockfd, struct ndpip_pbuf **pb, size_t len) {
 	if (sockfd < 0) {
 		errno = EBADF;
 		return -1;
@@ -497,7 +497,7 @@ int ndpip_sock_free(struct ndpip_socket *sock, struct ndpip_pbuf **pb, size_t le
 	return 0;
 }
 
-int ndpip_sock_alloc(struct ndpip_socket *sock, struct ndpip_pbuf **pb, size_t len, bool rx)
+size_t ndpip_sock_alloc(struct ndpip_socket *sock, struct ndpip_pbuf **pb, size_t len, bool rx)
 {
 	struct ndpip_pbuf_pool *pool = NULL;
 	
@@ -511,20 +511,12 @@ int ndpip_sock_alloc(struct ndpip_socket *sock, struct ndpip_pbuf **pb, size_t l
 		return -1;
 	}
 
-	size_t tmp_len = len;
-	if (ndpip_pbuf_pool_request(pool, pb, &tmp_len) < 0)
-		goto ret_err;
-
-	if (tmp_len != len) {
-		ndpip_pbuf_pool_release(pool, pb, tmp_len);
-		goto ret_err;
+	if (ndpip_pbuf_pool_request(pool, pb, &len) < 0) {
+		errno = EFAULT;
+		return 0;
 	}
 
-	return 0;
-
-ret_err:
-	errno = EFAULT;
-	return -1;
+	return len;
 }
 
 int ndpip_setsockopt(int sockfd, int level, int optname, const void *optval, socklen_t optlen)

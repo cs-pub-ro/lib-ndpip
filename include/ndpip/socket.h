@@ -23,7 +23,7 @@ int ndpip_getsockopt(int sockfd, int level, int optname, const void *optval, soc
 int ndpip_recv(int sockfd, struct ndpip_pbuf **pb, uint16_t count);
 int ndpip_send(int sockfd, struct ndpip_pbuf **pb, uint16_t count);
 int ndpip_free(int sockfd, struct ndpip_pbuf **pb, size_t len);
-int ndpip_alloc(int sockfd, struct ndpip_pbuf **pb, size_t len);
+size_t ndpip_alloc(int sockfd, struct ndpip_pbuf **pb, size_t len);
 #ifdef NDPIP_GRANTS_ENABLE
 int ndpip_cost(int sockfd, struct ndpip_pbuf **pb, uint16_t len, uint16_t *pb_cost);
 int ndpip_grants_get(int sockfd, uint32_t grants);
