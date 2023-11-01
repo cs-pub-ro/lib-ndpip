@@ -30,6 +30,8 @@ int64_t (*ndpip_log_grants_msg)[5];
 size_t ndpip_log_grants_idx = 0;
 #endif
 
+static void ndpip_timers_hook(struct ndpip_iface *iface);
+
 int ndpip_rx_thread(void *argp)
 {
 	struct ndpip_iface *iface = argp;
@@ -43,17 +45,11 @@ int ndpip_rx_thread(void *argp)
 	ndpip_time_now(&before);
 
 	while (ndpip_iface_rx_thread_running(iface)) {
-		uint16_t pkt_cnt = burst_size;
-		struct ndpip_pbuf *pkts[pkt_cnt];
-		
-		uint16_t freed_pkt_cnt = 0;
-		struct ndpip_pbuf *freed_pkts[pkt_cnt];
+		ndpip_timers_hook(iface);
 
-		int r = ndpip_iface_rx_burst(iface, (void *) pkts, &pkt_cnt);
-
-		if (iter++ >= 10000000UL) {
+		if (iter++ >= 100000UL) {
 			struct timespec now;
-                        ndpip_time_now(&now);
+			ndpip_time_now(&now);
 
                         uint64_t delta = (now.tv_sec - before.tv_sec) * NDPIP_NSEC_IN_SEC + (now.tv_nsec - before.tv_nsec);
 			if (delta > NDPIP_NSEC_IN_SEC) {
@@ -62,10 +58,19 @@ int ndpip_rx_thread(void *argp)
 
 				replies_len_a = 0;
 				pkt_cnt_a = 0;
-				iter = 0;
 				before = now;
 			}
+
+			iter = 0;
 		}
+
+		uint16_t pkt_cnt = burst_size;
+		struct ndpip_pbuf *pkts[pkt_cnt];
+
+		uint16_t freed_pkt_cnt = 0;
+		struct ndpip_pbuf *freed_pkts[pkt_cnt];
+
+		int r = ndpip_iface_rx_burst(iface, (void *) pkts, &pkt_cnt);
 
 		if ((r < 0) || (pkt_cnt == 0))
 			continue;
@@ -282,8 +287,6 @@ free_pkt:
 
 		replies_len_a += replies_len;
 		pkt_cnt_a += pkt_cnt;
-
-		ndpip_thread_yield();
 	}
 
 	return 0;
@@ -296,16 +299,18 @@ void ndpip_timers_add(struct ndpip_timer *timer)
         ndpip_list_add(&ndpip_timers_head, (void *) timer);
 }
 
-void ndpip_timers_thread(struct ndpip_iface *iface)
+static void ndpip_timers_hook(struct ndpip_iface *iface)
 {
-	while (ndpip_iface_timers_thread_running(iface)) {
-		ndpip_list_foreach(struct ndpip_timer, timer, &ndpip_timers_head) {
-			if (ndpip_timer_armed(timer) && ndpip_timer_expired(timer)) {
-				ndpip_timer_disarm(timer);
-				timer->func(timer->argp);
-			}
-		}
+	static int timer = 0;
+	if (++timer < 1000)
+		return;
 
-		ndpip_timers_usleep(25000);
+	timer = 0;
+
+	ndpip_list_foreach(struct ndpip_timer, timer, &ndpip_timers_head) {
+		if (ndpip_timer_armed(timer) && ndpip_timer_expired(timer)) {
+			ndpip_timer_disarm(timer);
+			timer->func(timer->argp);
+		}
 	}
 }

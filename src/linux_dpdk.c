@@ -47,20 +47,12 @@ bool ndpip_linux_dpdk_iface_rx_thread_running(struct ndpip_iface *iface)
 	return iface_linux_dpdk->iface_rx_thread_running;
 }
 
-bool ndpip_linux_dpdk_iface_timers_thread_running(struct ndpip_iface *iface)
-{
-	struct ndpip_linux_dpdk_iface *iface_linux_dpdk = (void *) iface;
-
-	return iface_linux_dpdk->iface_timers_thread_running;
-}
-
 int ndpip_linux_dpdk_stop_iface(int netdev_id)
 {
         if ((&iface)->iface_netdev_id != netdev_id)
                 return -1;
 
 	(&iface)->iface_rx_thread_running = false;
-	(&iface)->iface_timers_thread_running = false;
 
 	return 0;
 }
@@ -160,7 +152,6 @@ int ndpip_linux_dpdk_register_iface(int netdev_id)
 	}
 
 	(&iface)->iface_rx_thread_running = false;
-	(&iface)->iface_timers_thread_running = false;
 
 	return 0;
 }
@@ -174,11 +165,9 @@ int ndpip_linux_dpdk_start_iface(int netdev_id)
 		return -1;
 
 	(&iface)->iface_rx_thread_running = true;
-	(&iface)->iface_timers_thread_running = true;
 
 	unsigned rx_lcore = rte_get_next_lcore(rte_lcore_id(), 1, 1);
 
-	pthread_create(&(&iface)->iface_timers_thread, NULL, ndpip_linux_dpdk_timers_thread, &iface);
 	rte_eal_remote_launch(ndpip_rx_thread, &iface, rx_lcore);
 
 	return 0;
@@ -404,14 +393,6 @@ void ndpip_linux_dpdk_pbuf_refcount_update(struct ndpip_pbuf *pb, int16_t val)
 {
 	struct rte_mbuf *mb = (void *) pb;
 	rte_mbuf_refcnt_update(mb, val);
-}
-
-void *ndpip_linux_dpdk_timers_thread(void *argp)
-{
-	struct ndpip_iface *iface = argp;
-	ndpip_timers_thread(iface);
-
-	return NULL;
 }
 
 bool ndpip_linux_dpdk_iface_has_offload(struct ndpip_iface *iface, enum ndpip_iface_offload off)
