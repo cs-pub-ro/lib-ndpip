@@ -590,3 +590,8 @@ struct ndpip_pbuf *ndpip_linux_dpdk_pbuf_copy(struct ndpip_pbuf *pb, struct ndpi
 
 	return (void *) rte_pktmbuf_copy(m, p, offset, length);
 }
+
+void *ndpip_linux_dpdk_memcpy(void *dest, const void *src, size_t n)
+{
+	return rte_memcpy(dest, src, n);
+}

@@ -66,6 +66,7 @@ int ndpip_linux_dpdk_iface_xmit(struct ndpip_iface *iface, struct ndpip_pbuf **p
 void ndpip_linux_dpdk_usleep(unsigned usec);
 void ndpip_linux_dpdk_timers_usleep(unsigned usec);
 void ndpip_linux_dpdk_thread_yield();
+void *ndpip_linux_dpdk_memcpy(void *dest, const void *src, size_t n);
 
 bool ndpip_linux_dpdk_iface_rx_thread_running(struct ndpip_iface *iface);
 bool ndpip_linux_dpdk_iface_timers_thread_running(struct ndpip_iface *iface);
@@ -97,6 +98,7 @@ uint16_t ndpip_linux_dpdk_ipv4_udptcp_cksum(struct iphdr *iph, void *l4h);
 #define ndpip_usleep ndpip_linux_dpdk_usleep
 #define ndpip_timers_usleep ndpip_linux_dpdk_timers_usleep
 #define ndpip_thread_yield ndpip_linux_dpdk_thread_yield
+#define ndpip_memcpy ndpip_linux_dpdk_memcpy
 
 #define ndpip_iface_rx_thread_running ndpip_linux_dpdk_iface_rx_thread_running
 #define ndpip_iface_timers_thread_running ndpip_linux_dpdk_iface_timers_thread_running

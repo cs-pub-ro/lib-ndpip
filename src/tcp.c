@@ -153,8 +153,8 @@ static int ndpip_tcp_build_xmit_template(struct ndpip_tcp_socket *tcp_sock)
 	if ((eth_dst == NULL) || (eth_src == NULL))
 		return -1;
 
-	memcpy(eth->h_dest, eth_dst, ETH_ALEN);
-	memcpy(eth->h_source, eth_src, ETH_ALEN);
+	ndpip_memcpy(eth->h_dest, eth_dst, ETH_ALEN);
+	ndpip_memcpy(eth->h_source, eth_src, ETH_ALEN);
 
 	eth->h_proto = htons(ETH_P_IP);
 
@@ -200,7 +200,7 @@ static int ndpip_tcp_build_meta(struct ndpip_tcp_socket *tcp_sock, uint8_t th_fl
 		assert(ndpip_pbuf_resize(pb, sizeof(struct ethhdr) + sizeof(struct iphdr) + sizeof(struct tcphdr)) >= 0);
 
 	struct ethhdr *eth = ndpip_pbuf_data(pb);
-	memcpy((void *) eth, tcp_sock->xmit_template, sizeof(tcp_sock->xmit_template));
+	ndpip_memcpy((void *) eth, tcp_sock->xmit_template, sizeof(tcp_sock->xmit_template));
 
 	struct iphdr *iph = ((void *) eth) + sizeof(struct ethhdr);
 	if (th_flags & TH_SYN) {
@@ -381,7 +381,7 @@ int ndpip_tcp_close(struct ndpip_tcp_socket *tcp_sock)
 static void ndpip_tcp_prepare_send(struct ndpip_tcp_socket *tcp_sock, struct ndpip_pbuf *pb, uint16_t data_len, uint32_t tcp_seq)
 {
 	assert(ndpip_pbuf_offset(pb, sizeof(tcp_sock->xmit_template)) >= 0);
-	memcpy(ndpip_pbuf_data(pb), tcp_sock->xmit_template, sizeof(tcp_sock->xmit_template));
+	ndpip_memcpy(ndpip_pbuf_data(pb), tcp_sock->xmit_template, sizeof(tcp_sock->xmit_template));
 
 	struct iphdr *iph = ndpip_pbuf_data(pb) + sizeof(struct ethhdr);
 	struct tcphdr *th = (void *) (iph + 1);
