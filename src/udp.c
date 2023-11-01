@@ -126,16 +126,14 @@ int ndpip_udp_send(struct ndpip_udp_socket *udp_sock, struct ndpip_pbuf **pb, ui
 	if (cnt == 0)
 		return 0;
 
-	struct timespec now;
-	ndpip_time_now(&now);
-
 	for (uint16_t idx = 0; idx < cnt; idx++) {
 		uint16_t data_len = ndpip_pbuf_length(pb[idx]);
 
 		assert(ndpip_pbuf_offset(pb[idx], sizeof(udp_sock->xmit_template)) >= 0);
 		memcpy(ndpip_pbuf_data(pb[idx]), udp_sock->xmit_template, sizeof(udp_sock->xmit_template));
 
-		struct iphdr *iph = ndpip_pbuf_data(pb[idx]) + sizeof(struct ethhdr);
+		struct ethhdr *eth = ndpip_pbuf_data(pb[idx]);
+		struct iphdr *iph = (void *) (eth + 1);
 		struct udphdr *uh = (void *) (iph + 1);
 
 		uint16_t tot_len = sizeof(struct iphdr) + sizeof(struct udphdr) + data_len;
