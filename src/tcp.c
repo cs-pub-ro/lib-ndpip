@@ -210,9 +210,11 @@ static int ndpip_tcp_build_meta(struct ndpip_tcp_socket *tcp_sock, uint8_t th_fl
 	} else
 		iph->tot_len = htons(sizeof(struct iphdr) + sizeof(struct tcphdr));
 
+	uint32_t tcp_seq = tcp_sock->tcp_seq;
+
 	struct tcphdr *th = ((void *) iph) + sizeof(struct iphdr);
 	th->th_flags = th_flags;
-	th->th_seq = htonl(tcp_sock->tcp_seq);
+	th->th_seq = htonl(tcp_seq);
 	th->th_ack = htonl(tcp_sock->tcp_ack);
 
 	if (th_flags & TH_SYN) {
@@ -237,6 +239,8 @@ static int ndpip_tcp_build_meta(struct ndpip_tcp_socket *tcp_sock, uint8_t th_fl
 #ifndef NDPIP_DEBUG_NO_CKSUM
 	ndpip_tcp_prepare_pbuf(tcp_sock, pb, iph, th);
 #endif
+	ndpip_pbuf_metadata(pb)->tcp_ack = tcp_seq + (th_flags == TH_ACK ? 0 : 1);
+
 	return 0;
 }
 
@@ -480,6 +484,7 @@ int ndpip_tcp_send(struct ndpip_tcp_socket *tcp_sock, struct ndpip_pbuf **pb, ui
 			break;
 
 		ndpip_tcp_prepare_send(tcp_sock, pb[idx], data_len, tcp_seq);
+		ndpip_pbuf_metadata(pb[idx])->tcp_ack = tcp_seq + data_len;
 		tcp_seq += data_len;
 		data_left -= data_len;
 	}
@@ -566,19 +571,7 @@ void ndpip_tcp_free_acked(struct ndpip_tcp_socket *tcp_sock)
 	//printf("ndpip_tcp_free_acked: data_len=[");
 	ssize_t idx;
 	for (idx = xmit_ring_size - 1; idx >= 0; idx--) {
-		struct ethhdr *eth = ndpip_pbuf_data(pbs[idx]);
-
-		struct iphdr *iph = (void *) (eth + 1);
-		uint16_t iph_hlen = iph->ihl << 2;
-
-		struct tcphdr *th = ((void *) iph) + iph_hlen;
-		uint16_t th_hlen = th->th_off << 2;
-
-		uint16_t data_len = ntohs(iph->tot_len) - iph_hlen - th_hlen;
-		if ((data_len == 0) && (th->th_flags & ~TH_ACK))
-			data_len = 1;
-
-		uint32_t tcp_ack = ntohl(th->th_seq) + data_len;
+		uint32_t tcp_ack = ndpip_pbuf_metadata(pbs[idx])->tcp_ack;
 		if ((tcp_sock->tcp_last_ack - tcp_ack) < (1 << 31)) {
 			break;
 		}

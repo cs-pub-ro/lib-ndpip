@@ -7,6 +7,7 @@
 #include <time.h>
 
 struct ndpip_pbuf_meta {
+	uint32_t tcp_ack;
 };
 
 enum ndpip_pbuf_flag {

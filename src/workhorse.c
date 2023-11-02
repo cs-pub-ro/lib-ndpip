@@ -38,6 +38,7 @@ int ndpip_rx_thread(void *argp)
 	uint16_t burst_size = ndpip_iface_get_burst_size(iface);
 
 	uint64_t iter = 0;
+	uint64_t iter2 = 0;
 	uint64_t pkt_cnt_a = 0;
 	uint64_t replies_len_a = 0;
 
@@ -46,23 +47,6 @@ int ndpip_rx_thread(void *argp)
 
 	while (ndpip_iface_rx_thread_running(iface)) {
 		ndpip_timers_hook(iface);
-
-		if (iter++ >= 100000UL) {
-			struct timespec now;
-			ndpip_time_now(&now);
-
-                        uint64_t delta = (now.tv_sec - before.tv_sec) * NDPIP_NSEC_IN_SEC + (now.tv_nsec - before.tv_nsec);
-			if (delta > NDPIP_NSEC_IN_SEC) {
-				if (pkt_cnt_a != 0)
-					printf("ndpip_rx_thread: avg_burst=%lf; avg_replies=%lf; pps=%lf;\n", ((double) pkt_cnt_a) / iter, ((double) replies_len_a) / iter, ((double) pkt_cnt_a) * NDPIP_NSEC_IN_SEC / delta);
-
-				replies_len_a = 0;
-				pkt_cnt_a = 0;
-				before = now;
-			}
-
-			iter = 0;
-		}
 
 		uint16_t pkt_cnt = burst_size;
 		struct ndpip_pbuf *pkts[pkt_cnt];
@@ -287,6 +271,28 @@ free_pkt:
 
 		replies_len_a += replies_len;
 		pkt_cnt_a += pkt_cnt;
+
+		iter2++;
+
+		if (iter++ >= 1000UL) {
+			struct timespec now;
+			ndpip_time_now(&now);
+
+                        uint64_t delta = (now.tv_sec - before.tv_sec) * NDPIP_NSEC_IN_SEC + (now.tv_nsec - before.tv_nsec);
+			if (delta > NDPIP_NSEC_IN_SEC) {
+				if (pkt_cnt_a != 0)
+					printf("ndpip_rx_thread: avg_burst=%lf; avg_replies=%lf; pps=%lf;\n", ((double) pkt_cnt_a) / iter2, ((double) replies_len_a) / iter2, ((double) pkt_cnt_a) * NDPIP_NSEC_IN_SEC / delta);
+
+				replies_len_a = 0;
+				pkt_cnt_a = 0;
+				before = now;
+
+				iter2 = 0;
+			}
+
+			iter = 0;
+		}
+
 	}
 
 	return 0;
