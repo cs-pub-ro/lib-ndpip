@@ -569,15 +569,33 @@ void ndpip_tcp_free_acked(struct ndpip_tcp_socket *tcp_sock)
 	ndpip_ring_peek(xmit_ring, &xmit_ring_size, pbs);
 
 	//printf("ndpip_tcp_free_acked: data_len=[");
-	ssize_t idx;
-	for (idx = xmit_ring_size - 1; idx >= 0; idx--) {
+	size_t idx;
+	for (idx = 0; idx < xmit_ring_size; idx++) {
 		uint32_t tcp_ack = ndpip_pbuf_metadata(pbs[idx])->tcp_ack;
-		if ((tcp_sock->tcp_last_ack - tcp_ack) < (1 << 31)) {
+		if ((tcp_sock->tcp_last_ack - tcp_ack) > (1 << 31)) {
 			break;
 		}
 	}
 
-	idx++;
+	/*
+	{
+		static size_t xmit_ring_size_a = 0;
+		static size_t idx_a = 0;
+		static size_t cnt_a = 0;
+
+		xmit_ring_size_a += xmit_ring_size;
+		idx_a += idx;
+		cnt_a++;
+
+		if (cnt_a > 100000) {
+			printf("tcp_free_acked: xmit_ring_size=%lf; idx=%lf;\n", ((double) xmit_ring_size_a) / cnt_a, ((double) idx_a) / cnt_a);
+
+			cnt_a = 0;
+			idx_a = 0;
+			xmit_ring_size_a = 0;
+		}
+	}
+	*/
 
 	/*
 	printf("];\n");
