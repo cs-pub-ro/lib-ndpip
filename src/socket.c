@@ -230,7 +230,7 @@ int ndpip_bind(int sockfd, const struct sockaddr *addr, socklen_t addrlen)
 	}
 
 	if (sock->protocol == IPPROTO_UDP) {
-		uint64_t hash = ndpip_socket_listening_hash(*addr_in);
+		uint64_t hash = ndpip_socket_listening_hash(addr_in);
 		ndpip_hashtable_put(ndpip_udp_listening_sockets, hash, sock);
 	}
 
@@ -266,7 +266,7 @@ int ndpip_listen(int sockfd, int backlog)
 
 	tcp_sock->state = LISTENING;
 
-	uint64_t hash = ndpip_socket_listening_hash(sock->local);
+	uint64_t hash = ndpip_socket_listening_hash(&sock->local);
 	ndpip_hashtable_put(ndpip_tcp_listening_sockets, hash, sock);
 
 	return 0;
@@ -701,19 +701,19 @@ int ndpip_close(int sockfd)
 	return -1;
 }
 
-uint64_t ndpip_socket_established_hash(struct sockaddr_in local, struct sockaddr_in remote)
+uint64_t ndpip_socket_established_hash(struct sockaddr_in *local, struct sockaddr_in *remote)
 {
-	uint64_t saddr = local.sin_addr.s_addr, sport = local.sin_port, daddr = remote.sin_addr.s_addr, dport = remote.sin_port;
+	uint64_t saddr = local->sin_addr.s_addr, sport = local->sin_port, daddr = remote->sin_addr.s_addr, dport = remote->sin_port;
 	return (saddr ^ (sport | (dport << 16))) | (daddr << 32);
 }
 
-uint64_t ndpip_socket_listening_hash(struct sockaddr_in local)
+uint64_t ndpip_socket_listening_hash(struct sockaddr_in *local)
 {
-	uint64_t saddr = local.sin_addr.s_addr, sport = local.sin_port;
+	uint64_t saddr = local->sin_addr.s_addr, sport = local->sin_port;
 	return saddr | (sport << 32);
 }
 
-struct ndpip_socket *ndpip_socket_get_by_peer(struct sockaddr_in local, struct sockaddr_in remote, int protocol)
+struct ndpip_socket *ndpip_socket_get_by_peer(struct sockaddr_in *local, struct sockaddr_in *remote, int protocol)
 {
 	if (!ndpip_socket_initialized)
 		return NULL;

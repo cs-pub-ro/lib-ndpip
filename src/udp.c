@@ -17,7 +17,7 @@ int ndpip_udp_close(struct ndpip_udp_socket *udp_sock)
 {
 	struct ndpip_socket *sock = &udp_sock->socket;
 
-	uint64_t hash = ndpip_socket_established_hash(sock->local, sock->remote);
+	uint64_t hash = ndpip_socket_established_hash(&sock->local, &sock->remote);
 	ndpip_hashtable_del(ndpip_udp_established_sockets, hash);
 
 	return 0;
@@ -72,10 +72,10 @@ int ndpip_udp_connect(struct ndpip_udp_socket *udp_sock)
 
 	struct ndpip_socket *sock = &udp_sock->socket;
 
-	uint64_t hash1 = ndpip_socket_listening_hash(sock->local);
+	uint64_t hash1 = ndpip_socket_listening_hash(&sock->local);
 	ndpip_hashtable_del(ndpip_udp_listening_sockets, hash1);
 
-	uint64_t hash2 = ndpip_socket_established_hash(sock->local, sock->remote);
+	uint64_t hash2 = ndpip_socket_established_hash(&sock->local, &sock->remote);
 	ndpip_hashtable_put(ndpip_udp_established_sockets, hash2, sock);
 
 	return 0;

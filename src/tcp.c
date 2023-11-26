@@ -124,7 +124,7 @@ int ndpip_tcp_connect(struct ndpip_tcp_socket *tcp_sock)
 		return -1;
 	}
 
-	uint64_t hash = ndpip_socket_established_hash(sock->local, sock->remote);
+	uint64_t hash = ndpip_socket_established_hash(&sock->local, &sock->remote);
 	ndpip_hashtable_put(ndpip_tcp_established_sockets, hash, sock);
 
 	tcp_sock->state = CONNECTING;
@@ -311,7 +311,7 @@ static void ndpip_tcp_close_established(struct ndpip_tcp_socket *tcp_sock)
 {
 	struct ndpip_socket *sock = &tcp_sock->socket;
 
-	uint64_t hash = ndpip_socket_established_hash(sock->local, sock->remote);
+	uint64_t hash = ndpip_socket_established_hash(&sock->local, &sock->remote);
 	ndpip_hashtable_del(ndpip_tcp_established_sockets, hash);
 }
 
@@ -319,7 +319,7 @@ static void ndpip_tcp_close_listening(struct ndpip_tcp_socket *tcp_sock)
 {
 	struct ndpip_socket *sock = &tcp_sock->socket;
 
-	uint64_t hash = ndpip_socket_listening_hash(sock->local);
+	uint64_t hash = ndpip_socket_listening_hash(&sock->local);
 	ndpip_hashtable_del(ndpip_tcp_listening_sockets, hash);
 }
 
@@ -743,7 +743,7 @@ int ndpip_tcp_feed(struct ndpip_tcp_socket *tcp_sock, struct sockaddr_in *remote
 
 		tcp_asock->tcp_ack = tcp_sock->tcp_ack;
 
-		uint64_t hash = ndpip_socket_established_hash(asock->local, asock->remote);
+		uint64_t hash = ndpip_socket_established_hash(&asock->local, &asock->remote);
 		ndpip_hashtable_put(ndpip_tcp_established_sockets, hash, asock);
 
 		ndpip_list_add(&tcp_sock->accept_queue, &tcp_asock->accept_queue);

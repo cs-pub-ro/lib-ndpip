@@ -184,7 +184,7 @@ int ndpip_rx_thread(void *argp)
 					.sin_port = th->th_sport
 				};
 
-				struct ndpip_tcp_socket *tcp_sock = (struct ndpip_tcp_socket *) ndpip_socket_get_by_peer(local, remote, IPPROTO_TCP);
+				struct ndpip_tcp_socket *tcp_sock = (struct ndpip_tcp_socket *) ndpip_socket_get_by_peer(&local, &remote, IPPROTO_TCP);
 				if (tcp_sock == NULL)
 					goto free_pkt;
 
@@ -228,7 +228,7 @@ int ndpip_rx_thread(void *argp)
 					.sin_port = uh->uh_sport
 				};
 
-				struct ndpip_udp_socket *udp_sock = (struct ndpip_udp_socket *) ndpip_socket_get_by_peer(local, remote, IPPROTO_UDP);
+				struct ndpip_udp_socket *udp_sock = (struct ndpip_udp_socket *) ndpip_socket_get_by_peer(&local, &remote, IPPROTO_UDP);
 				if (udp_sock == NULL)
 					goto free_pkt;
 
