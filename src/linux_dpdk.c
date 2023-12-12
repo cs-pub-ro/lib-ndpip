@@ -11,8 +11,10 @@
 
 #define NDPIP_TX_NB_MBUF (NDPIP_SOCKET_XMIT_RING_LENGTH + 1024)
 #define NDPIP_RX_NB_MBUF (NDPIP_SOCKET_RECV_RING_LENGTH + 1024)
-#define NDPIP_TODO_MEMPOOL_CACHE_SZ 256
-#define NDPIP_TODO_MBUF_SIZE 3072
+#define NDPIP_LINUX_DPDK_TX_DESC 0
+#define NDPIP_LINUX_DPDK_RX_DESC 0
+#define NDPIP_LINUX_DPDK_MEMPOOL_CACHE_SZ 256
+#define NDPIP_MBUF_SIZE 2048
 #define NDPIP_TODO_MTU 1500
 #define NDPIP_LINUX_DPDK_MBUF_PRIVATE RTE_ALIGN_CEIL(sizeof(struct ndpip_pbuf_meta), RTE_MBUF_PRIV_ALIGN)
 
@@ -129,24 +131,24 @@ int ndpip_linux_dpdk_register_iface(int netdev_id)
 		return -1;
 	}
 
-	(&iface)->iface_pbuf_pool_rx = (void *) rte_pktmbuf_pool_create("ndpip_pool_rx", NDPIP_RX_NB_MBUF, NDPIP_TODO_MEMPOOL_CACHE_SZ, NDPIP_LINUX_DPDK_MBUF_PRIVATE, NDPIP_TODO_MBUF_SIZE, rte_socket_id());
+	(&iface)->iface_pbuf_pool_rx = (void *) rte_pktmbuf_pool_create("ndpip_pool_rx", NDPIP_RX_NB_MBUF, NDPIP_LINUX_DPDK_MEMPOOL_CACHE_SZ, NDPIP_LINUX_DPDK_MBUF_PRIVATE, NDPIP_MBUF_SIZE, rte_socket_id());
 	if ((&iface)->iface_pbuf_pool_rx == NULL) {
 		perror("rte_pktmbuf_pool_create");
 		return -1;
 	}
 
-	(&iface)->iface_pbuf_pool_tx = (void *) rte_pktmbuf_pool_create("ndpip_pool_tx", NDPIP_TX_NB_MBUF, NDPIP_TODO_MEMPOOL_CACHE_SZ, NDPIP_LINUX_DPDK_MBUF_PRIVATE, NDPIP_TODO_MBUF_SIZE, rte_socket_id());
+	(&iface)->iface_pbuf_pool_tx = (void *) rte_pktmbuf_pool_create("ndpip_pool_tx", NDPIP_TX_NB_MBUF, NDPIP_LINUX_DPDK_MEMPOOL_CACHE_SZ, NDPIP_LINUX_DPDK_MBUF_PRIVATE, NDPIP_MBUF_SIZE, rte_socket_id());
 	if ((&iface)->iface_pbuf_pool_tx == NULL) {
 		perror("rte_pktmbuf_pool_create");
 		return -1;
 	}
 
-	if (rte_eth_rx_queue_setup((&iface)->iface_netdev_id, (&iface)->iface_rx_queue_id, 2048, rte_eth_dev_socket_id((&iface)->iface_netdev_id), NULL, (void *) (&iface)->iface_pbuf_pool_rx) < 0) {
+	if (rte_eth_rx_queue_setup((&iface)->iface_netdev_id, (&iface)->iface_rx_queue_id, NDPIP_LINUX_DPDK_RX_DESC, rte_eth_dev_socket_id((&iface)->iface_netdev_id), NULL, (void *) (&iface)->iface_pbuf_pool_rx) < 0) {
 		perror("rte_eth_rx_queue_setup");
 		return -1;
 	}
 
-	if (rte_eth_tx_queue_setup((&iface)->iface_netdev_id, (&iface)->iface_tx_queue_id, 2048, rte_eth_dev_socket_id((&iface)->iface_netdev_id), NULL) < 0) {
+	if (rte_eth_tx_queue_setup((&iface)->iface_netdev_id, (&iface)->iface_tx_queue_id, NDPIP_LINUX_DPDK_TX_DESC, rte_eth_dev_socket_id((&iface)->iface_netdev_id), NULL) < 0) {
 		perror("rte_eth_tx_queue_setup");
 		return -1;
 	}
