@@ -659,19 +659,14 @@ int ndpip_tcp_flush(struct ndpip_tcp_socket *tcp_sock, struct ndpip_pbuf *rpb)
 	return 0;
 }
 
-int ndpip_tcp_feed(struct ndpip_tcp_socket *tcp_sock, struct sockaddr_in *remote, struct ndpip_pbuf *pb, uint16_t th_len)
+int ndpip_tcp_feed(struct ndpip_tcp_socket *tcp_sock, struct sockaddr_in *remote, struct ndpip_pbuf *pb, struct tcphdr *th, uint16_t th_hlen, uint16_t data_len)
 {
 	//printf("TCP-feed\n");
 	struct ndpip_socket *sock = &tcp_sock->socket;
 
-	struct tcphdr *th = ndpip_pbuf_data(pb);
 	uint8_t th_flags = th->th_flags & ~TH_PUSH;
-
 	uint32_t tcp_seq = ntohl(th->th_seq);
 	uint32_t tcp_ack = ntohl(th->th_ack);
-
-	uint16_t th_hlen = th->th_off << 2;
-	uint16_t data_len = th_len - th_hlen;
 
 	enum ndpip_tcp_socket_state tcp_state = tcp_sock->state;
 
@@ -807,7 +802,6 @@ int ndpip_tcp_feed(struct ndpip_tcp_socket *tcp_sock, struct sockaddr_in *remote
 
 		tcp_sock->tcp_rsp_ack = true;
 
-		assert(ndpip_pbuf_offset(pb, -th_hlen) >= 0);
 		assert(ndpip_ring_push_one(&sock->recv_ring, pb) >= 0);
 
 		return 1;

@@ -143,12 +143,10 @@ int ndpip_rx_thread(void *argp)
 			if (ntohs(eth->h_proto) != ETH_P_IP)
 				goto free_pkt;
 
-			assert(ndpip_pbuf_offset(pb, -(int) sizeof(struct ethhdr)) >= 0);
-
 			if (pbuf_len < (sizeof(struct ethhdr) + sizeof(struct iphdr)))
 				goto free_pkt;
 
-			struct iphdr *iph = ndpip_pbuf_data(pb);
+			struct iphdr *iph = (void *) (eth + 1);
 
 #ifndef NDPIP_DEBUG_NO_CKSUM
 			if (ndpip_iface_has_offload(iface, NDPIP_IFACE_OFFLOAD_RX_IPV4_CSUM)) {
@@ -174,14 +172,11 @@ int ndpip_rx_thread(void *argp)
 			uint16_t iph_hlen = iph->ihl << 2;
 			pbuf_len = ntohs(iph->tot_len) - iph_hlen;
 
-			assert(ndpip_pbuf_offset(pb, -(int) iph_hlen) >= 0);
-			assert(ndpip_pbuf_resize(pb, pbuf_len) >= 0);
-
 			if (protocol == IPPROTO_TCP) {
 				if (pbuf_len < sizeof(struct tcphdr))
 					goto free_pkt;
 
-				struct tcphdr *th = ndpip_pbuf_data(pb);
+				struct tcphdr *th = ((void *) iph) + iph_hlen;
 #ifndef NDPIP_DEBUG_NO_CKSUM
 				if (ndpip_iface_has_offload(iface, NDPIP_IFACE_OFFLOAD_RX_TCPV4_CSUM)) {
 					if (ndpip_pbuf_has_flag(pb, NDPIP_PBUF_F_RX_L4_CSUM_BAD))
@@ -217,7 +212,16 @@ int ndpip_rx_thread(void *argp)
 					tcp_sock->rx_loop_seen = true;
 				}
 
-				if (ndpip_tcp_feed(tcp_sock, &remote, pb, pbuf_len) == 1)
+				uint16_t th_hlen = th->th_off << 2;
+				uint16_t data_len = pbuf_len - th_hlen;
+
+				if (ndpip_pbuf_offset(pb, -(sizeof(struct ethhdr) + iph_hlen + th_hlen)) < 0)
+					goto free_pkt;
+
+				if (ndpip_pbuf_resize(pb, data_len) < 0)
+					goto free_pkt;
+
+				if (ndpip_tcp_feed(tcp_sock, &remote, pb, th, th_hlen, data_len) == 1)
 					continue;
 			}
 
@@ -225,8 +229,7 @@ int ndpip_rx_thread(void *argp)
 				if (pbuf_len < sizeof(struct udphdr))
 					goto free_pkt;
 
-				struct udphdr *uh = ndpip_pbuf_data(pb);
-
+				struct udphdr *uh = ((void *) iph) + iph_hlen;
 #ifndef NDPIP_DEBUG_NO_CKSUM
 				if (ndpip_iface_has_offload(iface, NDPIP_IFACE_OFFLOAD_RX_UDPV4_CSUM)) {
 					if (ndpip_pbuf_has_flag(pb, NDPIP_PBUF_F_RX_L4_CSUM_BAD))
@@ -256,8 +259,13 @@ int ndpip_rx_thread(void *argp)
 				if (udp_sock == NULL)
 					goto free_pkt;
 
-				if (ndpip_udp_feed(udp_sock, &remote, pb) == 2)
-					continue;
+				if (ndpip_pbuf_offset(pb, -(sizeof(struct ethhdr) + iph_hlen + sizeof(struct udphdr))) < 0)
+					goto free_pkt;
+
+				if (ndpip_pbuf_resize(pb, ntohs(uh->len) - sizeof(struct udphdr)) < 0)
+					goto free_pkt;
+
+				ndpip_udp_feed(udp_sock, &remote, pb);
 			}
 
 free_pkt:

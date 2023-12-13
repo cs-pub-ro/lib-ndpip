@@ -81,17 +81,10 @@ int ndpip_udp_connect(struct ndpip_udp_socket *udp_sock)
 	return 0;
 }
 
-int ndpip_udp_feed(struct ndpip_udp_socket *udp_sock, struct sockaddr_in *remote, struct ndpip_pbuf *pb)
+void ndpip_udp_feed(struct ndpip_udp_socket *udp_sock, struct sockaddr_in *remote, struct ndpip_pbuf *pb)
 {
 	struct ndpip_socket *sock = &udp_sock->socket;
-
-	if (ndpip_pbuf_length(pb) <= sizeof(struct udphdr))
-		return 0;
-
-	assert(ndpip_pbuf_offset(pb, -(int) sizeof(struct udphdr)) >= 0);
 	assert(ndpip_ring_push_one(&sock->recv_ring, pb) >= 0);
-    
-	return 2;
 }
 
 uint16_t ndpip_udp_max_xmit(struct ndpip_udp_socket *udp_sock, struct ndpip_pbuf **pb, uint16_t cnt)
