@@ -89,7 +89,7 @@ int ndpip_udp_feed(struct ndpip_udp_socket *udp_sock, struct sockaddr_in *remote
 		return 0;
 
 	assert(ndpip_pbuf_offset(pb, -(int) sizeof(struct udphdr)) >= 0);
-	assert(ndpip_ring_push_one(sock->recv_ring, pb) >= 0);
+	assert(ndpip_ring_push_one(&sock->recv_ring, pb) >= 0);
     
 	return 2;
 }

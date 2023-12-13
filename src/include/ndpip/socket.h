@@ -43,8 +43,8 @@ struct ndpip_socket {
 	struct sockaddr_in local;
 	struct sockaddr_in remote;
 
-	struct ndpip_ring *xmit_ring;
-	struct ndpip_ring *recv_ring;
+	struct ndpip_ring xmit_ring;
+	struct ndpip_ring recv_ring;
 
 	uint16_t tx_mss;
 

@@ -97,13 +97,11 @@ struct ndpip_socket *ndpip_socket_new(int domain, int type, int protocol)
 	sock->grants_overhead = NDPIP_EQDS_GRANTS_OVERHEAD;
 	sock->grants_overcommit = 0;
 #endif
-
 	sock->local = (struct sockaddr_in) { .sin_family = AF_INET, .sin_addr.s_addr = 0, .sin_port = 0 };
 	sock->remote = (struct sockaddr_in) { .sin_family = AF_INET, .sin_addr.s_addr = 0, .sin_port = 0 };
 
-	sock->xmit_ring = ndpip_ring_alloc(NDPIP_SOCKET_XMIT_RING_LENGTH);
-	sock->recv_ring = ndpip_ring_alloc(NDPIP_SOCKET_RECV_RING_LENGTH);
-
+	ndpip_ring_init(&sock->xmit_ring, NDPIP_SOCKET_XMIT_RING_LENGTH);
+	ndpip_ring_init(&sock->recv_ring, NDPIP_SOCKET_XMIT_RING_LENGTH);
 
 	if (protocol == IPPROTO_TCP) {
 		sock->tx_mss = NDPIP_TCP_DEFAULT_MSS;
@@ -350,7 +348,7 @@ int ndpip_recv(int sockfd, struct ndpip_pbuf **pb, uint16_t count)
 	}
 
 	size_t rcount = count;
-	if (ndpip_ring_pop(sock->recv_ring, &rcount, pb) < 0) {
+	if (ndpip_ring_pop(&sock->recv_ring, &rcount, pb) < 0) {
 		errno = EAGAIN;
 
 		if (sock->protocol == IPPROTO_TCP) {

@@ -16,18 +16,14 @@
 #endif
 
 
-struct ndpip_ring *ndpip_ring_alloc(size_t length)
+void ndpip_ring_init(struct ndpip_ring *ring, size_t length)
 {
-	struct ndpip_ring *ret = malloc(sizeof(struct ndpip_ring));
+	ring->ring_base = malloc(length * sizeof(struct ndpip_pbuf *));
+	ring->ring_length = length;
 
-	ret->ring_base = malloc(length * sizeof(struct ndpip_pbuf *));
-	ret->ring_length = length;
-
-	ret->ring_start = 0;
-	ret->ring_end = 0;
-	ret->ring_mask = length - 1;
-
-	return ret;
+	ring->ring_start = 0;
+	ring->ring_end = 0;
+	ring->ring_mask = length - 1;
 }
 
 int ndpip_ring_push_one(struct ndpip_ring *ring, struct ndpip_pbuf *pb)
