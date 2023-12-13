@@ -55,6 +55,7 @@ struct ndpip_socket {
 #endif
 };
 
+void ndpip_socket_init(void);
 struct ndpip_socket *ndpip_socket_new(int domain, int type, int protocol);
 struct ndpip_socket *ndpip_socket_accept(struct ndpip_socket *sock);
 int ndpip_sock_free(struct ndpip_socket *sock, struct ndpip_pbuf **pb, size_t len, bool rx);

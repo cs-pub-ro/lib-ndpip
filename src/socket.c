@@ -24,7 +24,6 @@ struct ndpip_hashtable *ndpip_udp_established_sockets = NULL;
 struct ndpip_hashtable *ndpip_udp_listening_sockets = NULL;
 
 struct ndpip_socket **socket_table = NULL;
-bool ndpip_socket_initialized = false;
 
 #ifdef NDPIP_GRANTS_ENABLE
 int ndpip_socket_grants_get(struct ndpip_socket *sock, uint32_t grants) {
@@ -61,9 +60,6 @@ int ndpip_socket_grants_get(struct ndpip_socket *sock, uint32_t grants) {
 
 static struct ndpip_socket *ndpip_socket_get(int sockfd)
 {
-	if (!ndpip_socket_initialized)
-		return NULL;
-
 	if (sockfd < NDPIP_TODO_MAX_FDS)
 		return socket_table[sockfd];
 
@@ -144,17 +140,17 @@ struct ndpip_socket *ndpip_socket_new(int domain, int type, int protocol)
 	return sock;
 }
 
+void ndpip_socket_init(void)
+{
+	socket_table = calloc(NDPIP_TODO_MAX_FDS, sizeof(struct ndpip_socket *));
+	ndpip_tcp_established_sockets = ndpip_hashtable_alloc(NDPIP_TODO_ESTABLISHED_SOCKETS_BUCKETS);
+	ndpip_tcp_listening_sockets = ndpip_hashtable_alloc(NDPIP_TODO_LISTENING_SOCKETS_BUCKETS);
+	ndpip_udp_established_sockets = ndpip_hashtable_alloc(NDPIP_TODO_ESTABLISHED_SOCKETS_BUCKETS);
+	ndpip_udp_listening_sockets = ndpip_hashtable_alloc(NDPIP_TODO_LISTENING_SOCKETS_BUCKETS);
+}
+
 int ndpip_socket(int domain, int type, int protocol)
 {
-	if (!ndpip_socket_initialized) {
-		socket_table = calloc(NDPIP_TODO_MAX_FDS, sizeof(struct ndpip_socket *));
-		ndpip_tcp_established_sockets = ndpip_hashtable_alloc(NDPIP_TODO_ESTABLISHED_SOCKETS_BUCKETS);
-		ndpip_tcp_listening_sockets = ndpip_hashtable_alloc(NDPIP_TODO_LISTENING_SOCKETS_BUCKETS);
-		ndpip_udp_established_sockets = ndpip_hashtable_alloc(NDPIP_TODO_ESTABLISHED_SOCKETS_BUCKETS);
-		ndpip_udp_listening_sockets = ndpip_hashtable_alloc(NDPIP_TODO_LISTENING_SOCKETS_BUCKETS);
-		ndpip_socket_initialized = true;
-	}
-
 	struct ndpip_socket *sock = ndpip_socket_new(domain, type, protocol);
 	if (sock == NULL)
 		return -1;
@@ -715,9 +711,6 @@ uint64_t ndpip_socket_listening_hash(struct sockaddr_in *local)
 
 struct ndpip_socket *ndpip_socket_get_by_peer(struct sockaddr_in *local, struct sockaddr_in *remote, int protocol)
 {
-	if (!ndpip_socket_initialized)
-		return NULL;
-
 	uint64_t hash1 = ndpip_socket_established_hash(local, remote);
 
 	if (protocol == IPPROTO_TCP) {
