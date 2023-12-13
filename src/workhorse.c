@@ -45,6 +45,9 @@ int ndpip_rx_thread(void *argp)
 	struct timespec before;
 	ndpip_time_now(&before);
 
+	char iface_ethaddr[ETH_ALEN];
+	memcpy(iface_ethaddr, ndpip_iface_get_ethaddr(iface), ETH_ALEN);
+
 	while (ndpip_iface_rx_thread_running(iface)) {
 		ndpip_timers_hook(iface);
 
@@ -100,7 +103,7 @@ int ndpip_rx_thread(void *argp)
 			struct ethhdr *eth = ndpip_pbuf_data(pb);
 
 			uint8_t bcast[] = { 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF };
-			if ((memcmp(eth->h_dest, ndpip_iface_get_ethaddr(iface), ETH_ALEN) != 0) &&
+			if ((memcmp(eth->h_dest, iface_ethaddr, ETH_ALEN) != 0) &&
 				(memcmp(eth->h_dest, bcast, ETH_ALEN) != 0))
 				goto free_pkt;
 
