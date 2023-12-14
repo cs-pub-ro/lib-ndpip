@@ -89,10 +89,6 @@ int ndpip_rx_thread(void *argp)
 		uint16_t replies_len = 0;
 		struct ndpip_pbuf *replies[pkt_cnt * 2];
 
-		size_t tmp_pkt_cnt = pkt_cnt;
-		assert(ndpip_pbuf_pool_request(ndpip_iface_get_pbuf_pool_tx(iface), replies, &tmp_pkt_cnt) >= 0);
-		assert(tmp_pkt_cnt == pkt_cnt);
-
 		for (uint16_t idx = 0; idx < pkt_cnt; idx++) {
 			struct ndpip_pbuf *pb = pkts[idx];
 			uint16_t pbuf_len = ndpip_pbuf_length(pb);
@@ -266,6 +262,8 @@ int ndpip_rx_thread(void *argp)
 					goto free_pkt;
 
 				ndpip_udp_feed(udp_sock, &remote, pb);
+
+				continue;
 			}
 
 free_pkt:
@@ -273,6 +271,10 @@ free_pkt:
 		}
 
 		ndpip_pbuf_pool_release(ndpip_iface_get_pbuf_pool_rx(iface), freed_pkts, freed_pkt_cnt);
+
+		size_t tmp_pkt_cnt = reply_sockets_len;
+		assert(ndpip_pbuf_pool_request(ndpip_iface_get_pbuf_pool_tx(iface), replies, &tmp_pkt_cnt) >= 0);
+		assert(tmp_pkt_cnt == reply_sockets_len);
 
 		for (uint16_t idx = 0; idx < reply_sockets_len; idx++) {
 			struct ndpip_tcp_socket *reply_tcp_socket = reply_sockets[idx];
@@ -299,7 +301,7 @@ free_pkt:
 		if (replies_len > 0)
 			ndpip_iface_xmit(iface, replies, replies_len, true);
 
-		ndpip_pbuf_pool_release(ndpip_iface_get_pbuf_pool_tx(iface), replies + replies_len, pkt_cnt - replies_len);
+		ndpip_pbuf_pool_release(ndpip_iface_get_pbuf_pool_tx(iface), replies + replies_len, reply_sockets_len - replies_len);
 
 		replies_len_a += replies_len;
 		pkt_cnt_a += pkt_cnt;
