@@ -72,7 +72,7 @@ struct eqds_cn {
 	uint32_t value2;
 } __attribute__((packed));
 
-void ndpip_ring_init(struct ndpip_ring *ring, size_t length);
+struct ndpip_ring *ndpip_ring_alloc(size_t length);
 int ndpip_ring_push(struct ndpip_ring *ring, struct ndpip_pbuf **pbs, size_t count);
 int ndpip_ring_push_one(struct ndpip_ring *ring, struct ndpip_pbuf *pb);
 int ndpip_ring_pop(struct ndpip_ring *ring, size_t *count, struct ndpip_pbuf **pbs);

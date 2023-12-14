@@ -252,7 +252,7 @@ void ndpip_tcp_rto_handler(void *argp) {
 	size_t cnt = 1;
 
 	ndpip_tcp_free_acked(tcp_sock);
-	if (ndpip_ring_peek(&sock->xmit_ring, &cnt, &pb) < 0)
+	if (ndpip_ring_peek(sock->xmit_ring, &cnt, &pb) < 0)
 		goto ret_no_rto;
 
 	//printf("rto2: xmit_ring_size=%lu;\n", ndpip_ring_size(sock->xmit_ring));
@@ -462,7 +462,7 @@ int ndpip_tcp_send(struct ndpip_tcp_socket *tcp_sock, struct ndpip_pbuf **pb, ui
 	if (data_left == 0)
 		return 0;
 #endif
-	struct ndpip_ring *xmit_ring = &sock->xmit_ring;
+	struct ndpip_ring *xmit_ring = sock->xmit_ring;
 	size_t xmit_ring_free = ndpip_ring_free(xmit_ring);
 	if (xmit_ring_free == 0)
 		return 0;
@@ -543,7 +543,7 @@ static int ndpip_tcp_send_one(struct ndpip_tcp_socket *tcp_sock, struct ndpip_pb
 		ndpip_log_grants_tcp_idx++;
 	}
 #endif
-	while (ndpip_ring_push_one(&sock->xmit_ring, pb) < 0)
+	while (ndpip_ring_push_one(sock->xmit_ring, pb) < 0)
 		ndpip_usleep(1);
 
 	ndpip_iface_xmit(sock->iface, &pb, 1, false);
@@ -559,8 +559,8 @@ void ndpip_tcp_free_acked(struct ndpip_tcp_socket *tcp_sock)
 
 	//printf("free_acked2: xmit_ring_size=%lu;\n", xmit_ring_size);
 
-	struct ndpip_ring *xmit_ring = &sock->xmit_ring;
-	size_t xmit_ring_size = ndpip_ring_size(xmit_ring);
+	struct ndpip_ring *xmit_ring = sock->xmit_ring;
+	size_t xmit_ring_size = ndpip_ring_size(sock->xmit_ring);
 	if (xmit_ring_size == 0)
 		return;
 
@@ -802,7 +802,7 @@ int ndpip_tcp_feed(struct ndpip_tcp_socket *tcp_sock, struct sockaddr_in *remote
 
 		tcp_sock->tcp_rsp_ack = true;
 
-		assert(ndpip_ring_push_one(&sock->recv_ring, pb) >= 0);
+		assert(ndpip_ring_push_one(sock->recv_ring, pb) >= 0);
 
 		return 1;
 	}

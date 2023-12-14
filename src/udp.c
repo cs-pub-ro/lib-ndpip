@@ -84,7 +84,7 @@ int ndpip_udp_connect(struct ndpip_udp_socket *udp_sock)
 void ndpip_udp_feed(struct ndpip_udp_socket *udp_sock, struct sockaddr_in *remote, struct ndpip_pbuf *pb)
 {
 	struct ndpip_socket *sock = &udp_sock->socket;
-	assert(ndpip_ring_push_one(&sock->recv_ring, pb) >= 0);
+	assert(ndpip_ring_push_one(sock->recv_ring, pb) >= 0);
 }
 
 uint16_t ndpip_udp_max_xmit(struct ndpip_udp_socket *udp_sock, struct ndpip_pbuf **pb, uint16_t cnt)
