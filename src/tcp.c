@@ -649,6 +649,8 @@ int ndpip_tcp_flush(struct ndpip_tcp_socket *tcp_sock, struct ndpip_pbuf *rpb)
 	}
 
 	ndpip_tcp_free_acked(tcp_sock);
+	assert(ndpip_ring_push(tcp_sock->socket.recv_ring, tcp_sock->socket.recv_tmp, tcp_sock->socket.recv_tmp_len) >= 0);
+	tcp_sock->socket.recv_tmp_len = 0;
 
 	if (tcp_sock->tcp_rsp_ack) {
 		ndpip_tcp_build_meta(tcp_sock, TH_ACK, rpb);
@@ -725,6 +727,9 @@ int ndpip_tcp_feed(struct ndpip_tcp_socket *tcp_sock, struct sockaddr_in *remote
 		asock->remote = *remote;
 		asock->iface = ndpip_iface_get_by_inaddr(asock->local.sin_addr);
 		asock->tx_mss = sock->tx_mss;
+		asock->recv_tmp = malloc(sizeof(struct ndpip_pbuf *) * ndpip_iface_get_burst_size(asock->iface));
+		asock->recv_tmp_len = 0;
+
 		tcp_asock->tcp_recv_win_scale = tcp_sock->tcp_recv_win_scale;
 		tcp_asock->state = ACCEPTING;
 		tcp_asock->rx_mss = tcp_sock->rx_mss;
@@ -802,7 +807,7 @@ int ndpip_tcp_feed(struct ndpip_tcp_socket *tcp_sock, struct sockaddr_in *remote
 
 		tcp_sock->tcp_rsp_ack = true;
 
-		assert(ndpip_ring_push_one(sock->recv_ring, pb) >= 0);
+		sock->recv_tmp[sock->recv_tmp_len++] = pb;
 
 		return 1;
 	}

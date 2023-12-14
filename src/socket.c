@@ -104,6 +104,7 @@ struct ndpip_socket *ndpip_socket_new(int domain, int type, int protocol)
 	sock->xmit_ring = ndpip_ring_alloc(NDPIP_SOCKET_XMIT_RING_LENGTH);
 	sock->recv_ring = ndpip_ring_alloc(NDPIP_SOCKET_RECV_RING_LENGTH);
 
+	sock->rx_loop_seen = false;
 
 	if (protocol == IPPROTO_TCP) {
 		sock->tx_mss = NDPIP_TCP_DEFAULT_MSS;
@@ -126,7 +127,6 @@ struct ndpip_socket *ndpip_socket_new(int domain, int type, int protocol)
 		tcp_sock->tcp_rsp_ack = false;
 		tcp_sock->tcp_req_ack = false;
 
-		tcp_sock->rx_loop_seen = false;
 		tcp_sock->rx_mss = NDPIP_TCP_DEFAULT_MSS;
 
 		tcp_sock->accept_queue = (struct ndpip_list_head) { &tcp_sock->accept_queue, &tcp_sock->accept_queue };
@@ -213,6 +213,8 @@ int ndpip_bind(int sockfd, const struct sockaddr *addr, socklen_t addrlen)
 
 	sock->local = *addr_in;
 	sock->iface = ndpip_iface_get_by_inaddr(addr_in->sin_addr);
+	sock->recv_tmp = malloc(sizeof(struct ndpip_pbuf *) * ndpip_iface_get_burst_size(sock->iface));
+	sock->recv_tmp_len = 0;
 
 	if (sock->protocol == IPPROTO_TCP) {
 		struct ndpip_tcp_socket *tcp_sock = (struct ndpip_tcp_socket *) sock;
