@@ -2,3 +2,4 @@ TODO: Add a poll API.
 TODO: Make sure tcp_send errs on input pbufs that are large than MSS. Also provide an API to probe the MSS.
 TODO: Eliminate race conditions between RX and TX threads. For example over rto_timer.
 TODO: On the RX side when receiving smaller that MSS segments move them to a malloc-based allocator and push them to the application.
+TODO: Presently packets are delivered to the received socket once per burst, this has the greatest perfromance gain when there is only one CONNECTED socket and worst when packets from "burst" sockets are received in one burst. A solution would be to deliver packets to the socket once a pad buffer is full, say 64 packets, or on the expiration of a timer. The performance increase is due to the fact that ndpip_ring_push_one is very slow, while ndpip_ring_push is faster.
