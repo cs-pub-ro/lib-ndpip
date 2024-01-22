@@ -5,6 +5,10 @@
 #include <string.h>
 #include <time.h>
 
+#include <fcntl.h>
+
+#include <sys/epoll.h>
+
 
 #define NDPIP_TODO_TCP_RETRANSMIT_COUNT 3
 #define NDPIP_TODO_TCP_WIN_SIZE ((1 << 16) - 1)
@@ -75,9 +79,6 @@ struct ndpip_tcp_socket *ndpip_tcp_accept(struct ndpip_tcp_socket *tcp_sock)
 	struct ndpip_tcp_socket *asock = ((void *) tcp_sock->accept_queue.next) - offsetof(struct ndpip_tcp_socket, accept_queue);
 	ndpip_list_del(tcp_sock->accept_queue.next);
 
-	while (asock->state != CONNECTED)
-		ndpip_usleep(1);
-
 	return asock;
 }
 
@@ -90,6 +91,8 @@ static int ndpip_tcp_fin(struct ndpip_tcp_socket *tcp_sock)
 
 	if (ndpip_tcp_build_meta(tcp_sock, TH_FIN, pb) < 0)
 		return -1;
+
+	tcp_sock->tcp_seq++;
 
 	ndpip_tcp_send_one(tcp_sock, pb);
 	return 0;
@@ -128,14 +131,18 @@ int ndpip_tcp_connect(struct ndpip_tcp_socket *tcp_sock)
 	ndpip_hashtable_put(ndpip_tcp_established_sockets, hash, sock);
 
 	tcp_sock->state = CONNECTING;
+	tcp_sock->tcp_seq++;
+
 	ndpip_tcp_send_one(tcp_sock, pb);
 
-	while (tcp_sock->state == CONNECTING)
-		ndpip_usleep(1);
+	if (!(sock->flags & O_NONBLOCK)) {
+		while (tcp_sock->state == CONNECTING)
+			ndpip_usleep(1);
 
-	if (tcp_sock->state != CONNECTED) {
-		errno = ECONNREFUSED;
-		return -1;
+		if (tcp_sock->state != CONNECTED) {
+			errno = ECONNREFUSED;
+			return -1;
+		}
 	}
 
 	return 0;
@@ -483,6 +490,7 @@ int ndpip_tcp_send(struct ndpip_tcp_socket *tcp_sock, struct ndpip_pbuf **pb, ui
 		if (data_left < data_len)
 			break;
 
+		//printf("Preparing segment: tcp_sock=%p; tcp_seq=%u;\n", tcp_sock, tcp_seq);
 		ndpip_tcp_prepare_send(tcp_sock, pb[idx], data_len, tcp_seq);
 		ndpip_pbuf_metadata(pb[idx])->tcp_ack = tcp_seq + data_len;
 		tcp_seq += data_len;
@@ -548,7 +556,6 @@ static int ndpip_tcp_send_one(struct ndpip_tcp_socket *tcp_sock, struct ndpip_pb
 
 	ndpip_iface_xmit(sock->iface, &pb, 1, false);
 	//ndpip_iface_xmit(sock->iface, &pb, 1, true);
-	tcp_sock->tcp_seq++;
 
 	return 0;
 }
@@ -638,6 +645,35 @@ void ndpip_tcp_free_acked(struct ndpip_tcp_socket *tcp_sock)
 	//printf("free_acked5: xmit_ring_size=%lu; freed_len=%lu; tcp_can_free=%lu;\n", ndpip_ring_size(xmit_ring), freed_len, tcp_sock->tcp_can_free);
 }
 
+uint32_t ndpip_tcp_poll(struct ndpip_tcp_socket *tcp_sock)
+{
+	uint32_t mask = 0;
+
+	switch (tcp_sock->state) {
+		case LISTENING:
+			mask |= tcp_sock->accept_queue.next == &tcp_sock->accept_queue ? 0 : EPOLLIN;
+			break;
+
+		case CONNECTED:
+			mask |= (((tcp_sock->tcp_max_seq - tcp_sock->tcp_seq) == 0) || tcp_sock->tcp_rto) ? 0 : EPOLLOUT;
+			mask |= ndpip_ring_size(tcp_sock->socket.recv_ring) == 0 ? 0 : EPOLLIN;
+			break;
+
+		case CLOSE_WAIT:
+		case LAST_ACK:
+		case TIME_WAIT:
+		case CLOSING:
+		case CLOSED:
+			mask |= EPOLLHUP;
+			break;
+
+		default:
+			break;
+	}
+
+	return mask;
+}
+
 int ndpip_tcp_flush(struct ndpip_tcp_socket *tcp_sock, struct ndpip_pbuf *rpb)
 {
 	//printf("flush\n");
@@ -665,6 +701,7 @@ int ndpip_tcp_feed(struct ndpip_tcp_socket *tcp_sock, struct sockaddr_in *remote
 {
 	//printf("TCP-feed\n");
 	struct ndpip_socket *sock = &tcp_sock->socket;
+	struct ndpip_pbuf *rpb;
 
 	uint8_t th_flags = th->th_flags & ~TH_PUSH;
 	uint32_t tcp_seq = ntohl(th->th_seq);
@@ -672,12 +709,13 @@ int ndpip_tcp_feed(struct ndpip_tcp_socket *tcp_sock, struct sockaddr_in *remote
 
 	enum ndpip_tcp_socket_state tcp_state = tcp_sock->state;
 
+	//printf("Segment sequence: tcp_sock=%p; seq=%u;\n", tcp_sock, tcp_seq);
+
 	if (tcp_state != LISTENING) {
 		if (tcp_state != CONNECTING) {
 			// Out of order or unseen segment
-			//printf("Segment sequence: seq=%u;\n", tcp_seq);
 			if (tcp_seq != tcp_sock->tcp_ack) {
-				//printf("ndpip_tcp_feed: Out of order or unseen segment: seq=%u; expected_seq=%u;\n", tcp_seq, tcp_sock->tcp_ack);
+				//printf("ndpip_tcp_feed: Out of order or unseen segment: tcp_sock=%p; seq=%u; expected_seq=%u;\n", tcp_sock, tcp_seq, tcp_sock->tcp_ack);
 				tcp_sock->tcp_rsp_ack = true;
 				return 0;
 			}
@@ -742,20 +780,19 @@ int ndpip_tcp_feed(struct ndpip_tcp_socket *tcp_sock, struct sockaddr_in *remote
 		}
 
 		tcp_asock->tcp_ack = tcp_sock->tcp_ack;
+		tcp_asock->parent_socket = tcp_sock;
 
 		uint64_t hash = ndpip_socket_established_hash(&asock->local, &asock->remote);
 		ndpip_hashtable_put(ndpip_tcp_established_sockets, hash, asock);
 
-		ndpip_list_add(&tcp_sock->accept_queue, &tcp_asock->accept_queue);
-
-		struct ndpip_pbuf *pb;
-		if (ndpip_sock_alloc((struct ndpip_socket *) tcp_asock, &pb, 1, false) == 0) {
+		if (ndpip_sock_alloc((struct ndpip_socket *) tcp_asock, &rpb, 1, false) == 0) {
 			tcp_sock = tcp_asock;
 			goto err;
 		}
 
-		ndpip_tcp_build_meta(tcp_asock, TH_SYN | TH_ACK, pb);
-		ndpip_tcp_send_one(tcp_asock, pb);
+		ndpip_tcp_build_meta(tcp_asock, TH_SYN | TH_ACK, rpb);
+		tcp_asock->tcp_seq++;
+		ndpip_tcp_send_one(tcp_asock, rpb);
 
 		return 0;
 	}
@@ -769,7 +806,12 @@ int ndpip_tcp_feed(struct ndpip_tcp_socket *tcp_sock, struct sockaddr_in *remote
 
 		ndpip_tcp_parse_opts(tcp_sock, th, th_hlen);
 
-		tcp_sock->tcp_rsp_ack = true;
+		if (ndpip_sock_alloc((struct ndpip_socket *) tcp_sock, &rpb, 1, false) == 0)
+			goto err;
+
+		ndpip_tcp_build_meta(tcp_sock, TH_ACK, rpb);
+		ndpip_tcp_send_one(tcp_sock, rpb);
+
 		tcp_sock->state = CONNECTED;
 
 		return 0;
@@ -783,6 +825,8 @@ int ndpip_tcp_feed(struct ndpip_tcp_socket *tcp_sock, struct sockaddr_in *remote
 			goto err;
 
 		tcp_sock->state = CONNECTED;
+		ndpip_list_add(&tcp_sock->parent_socket->accept_queue, &tcp_sock->accept_queue);
+
 		return 0;
 	}
 
@@ -886,8 +930,12 @@ err:
 	ndpip_tcp_close_established(tcp_sock);
 
 err_l:
-	ndpip_tcp_build_meta(tcp_sock, TH_RST, pb);
-	ndpip_tcp_send_one(tcp_sock, pb);
+	if (ndpip_sock_alloc((struct ndpip_socket *) tcp_sock, &rpb, 1, false) == 0)
+		return 0;
+
+	ndpip_tcp_build_meta(tcp_sock, TH_RST, rpb);
+	tcp_sock->tcp_seq++;
+	ndpip_tcp_send_one(tcp_sock, rpb);
 
 	return 0;
 }

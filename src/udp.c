@@ -9,9 +9,20 @@
 #include <netinet/ip.h>
 #include <netinet/udp.h>
 
+#include <sys/epoll.h>
+
+
 #ifndef NDPIP_DEBUG_NO_CKSUM
 static void ndpip_udp_prepare_pbuf(struct ndpip_udp_socket *tcp_sock, struct ndpip_pbuf *pb, struct iphdr *iph, struct udphdr *uh);
 #endif
+
+uint32_t ndpip_udp_poll(struct ndpip_udp_socket *udp_sock)
+{
+	uint32_t mask = EPOLLOUT;
+	mask |= ndpip_ring_size(udp_sock->socket.recv_ring) == 0 ? 0 : EPOLLIN;
+
+	return mask;
+}
 
 int ndpip_udp_close(struct ndpip_udp_socket *udp_sock)
 {

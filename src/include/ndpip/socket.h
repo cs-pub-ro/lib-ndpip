@@ -52,6 +52,8 @@ struct ndpip_socket {
 
 	bool rx_loop_seen;
 
+	unsigned int flags;
+
 #ifdef NDPIP_GRANTS_ENABLE
 	int64_t grants_overhead;
 	_Atomic int64_t grants;
@@ -62,6 +64,7 @@ struct ndpip_socket {
 void ndpip_socket_init(void);
 struct ndpip_socket *ndpip_socket_new(int domain, int type, int protocol);
 struct ndpip_socket *ndpip_socket_accept(struct ndpip_socket *sock);
+uint32_t ndpip_socket_poll(struct ndpip_socket *sock);
 int ndpip_sock_free(struct ndpip_socket *sock, struct ndpip_pbuf **pb, size_t len, bool rx);
 size_t ndpip_sock_alloc(struct ndpip_socket *sock, struct ndpip_pbuf **pb, size_t len, bool rx);
 struct ndpip_socket *ndpip_socket_get_by_peer(struct sockaddr_in *local, struct sockaddr_in *remote, int protocol);

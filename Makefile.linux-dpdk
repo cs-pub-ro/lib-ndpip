@@ -6,6 +6,7 @@ PREFIX ?=
 SRCS-y += src/tcp.c
 SRCS-y += src/udp.c
 SRCS-y += src/socket.c
+SRCS-y += src/eventpoll.c
 SRCS-y += src/util.c
 SRCS-y += src/workhorse.c
 SRCS-y += src/linux_dpdk.c

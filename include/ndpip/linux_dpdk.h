@@ -33,6 +33,7 @@ void ndpip_linux_dpdk_time_now(struct timespec *req);
 
 uint64_t ndpip_linux_dpdk_tsc();
 void ndpip_linux_dpdk_tsc2time(uint64_t tsc, struct timespec *req);
+void ndpip_linux_dpdk_init();
 
 #define ndpip_time_now ndpip_linux_dpdk_time_now
 

@@ -46,7 +46,6 @@ struct ndpip_timer {
 struct ndpip_ring {
 	struct ndpip_pbuf **ring_base;
 	size_t ring_length;
-	size_t ring_esize;
 	size_t ring_mask;
 
 	size_t ring_start;

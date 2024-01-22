@@ -1,5 +1,6 @@
 #include "ndpip/linux_dpdk.h"
 #include "ndpip/socket.h"
+#include "ndpip/epoll.h"
 #include "ndpip/workhorse.h"
 
 #include <assert.h>
@@ -23,7 +24,7 @@ static struct ndpip_linux_dpdk_iface iface = {
 };
 
 static uint64_t tsc_hz;
-bool ndpip_socket_initialized = false;
+bool ndpip_linux_dpdk_initialized = false;
 
 int ndpip_linux_dpdk_pbuf_pool_request(struct ndpip_pbuf_pool *pool, struct ndpip_pbuf **pbs, size_t *count)
 {
@@ -68,8 +69,6 @@ void ndpip_linux_dpdk_timers_usleep(unsigned usecs) {
 
 int ndpip_linux_dpdk_register_iface(int netdev_id)
 {
-	tsc_hz = rte_get_tsc_hz();
-
         if ((&iface)->iface_netdev_id >= 0) {
 		perror("iface_netdev_id >= 0");
                 return -1;
@@ -155,11 +154,6 @@ int ndpip_linux_dpdk_register_iface(int netdev_id)
 	}
 
 	(&iface)->iface_rx_thread_running = false;
-
-	if (!ndpip_socket_initialized) {
-		ndpip_socket_initialized = true;
-		ndpip_socket_init();
-	}
 
 	return 0;
 }
@@ -583,4 +577,14 @@ struct ndpip_pbuf *ndpip_linux_dpdk_pbuf_copy(struct ndpip_pbuf *pb, struct ndpi
 void *ndpip_linux_dpdk_memcpy(void *dest, const void *src, size_t n)
 {
 	return rte_memcpy(dest, src, n);
+}
+
+void ndpip_linux_dpdk_init()
+{
+	if (!ndpip_linux_dpdk_initialized) {
+		ndpip_linux_dpdk_initialized = true;
+		tsc_hz = rte_get_tsc_hz();
+		ndpip_socket_init();
+		ndpip_epoll_init();
+	}
 }

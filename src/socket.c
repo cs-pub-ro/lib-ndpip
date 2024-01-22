@@ -1,6 +1,8 @@
 #include <string.h>
 #include <time.h>
 
+#include <fcntl.h>
+
 #include "ndpip/socket.h"
 #include "ndpip/udp.h"
 #include "ndpip/tcp.h"
@@ -68,7 +70,10 @@ static struct ndpip_socket *ndpip_socket_get(int sockfd)
 
 struct ndpip_socket *ndpip_socket_new(int domain, int type, int protocol)
 {
-	if (!((domain == AF_INET) && (type == SOCK_NDPIP) && ((protocol == IPPROTO_TCP) || (protocol == IPPROTO_UDP))))
+	if (!((domain == AF_INET) &&
+		(type & SOCK_NDPIP) &&
+		((protocol == IPPROTO_TCP) || (protocol == IPPROTO_UDP))))
+
 		return NULL;
 
 	int socket_id = 0;
@@ -105,6 +110,10 @@ struct ndpip_socket *ndpip_socket_new(int domain, int type, int protocol)
 	sock->recv_ring = ndpip_ring_alloc(NDPIP_SOCKET_RECV_RING_LENGTH);
 
 	sock->rx_loop_seen = false;
+	sock->flags = 0;
+
+	if (type & SOCK_NONBLOCK)
+		sock->flags |= O_NONBLOCK;
 
 	if (protocol == IPPROTO_TCP) {
 		sock->tx_mss = NDPIP_TCP_DEFAULT_MSS;
@@ -130,6 +139,7 @@ struct ndpip_socket *ndpip_socket_new(int domain, int type, int protocol)
 		tcp_sock->rx_mss = NDPIP_TCP_DEFAULT_MSS;
 
 		tcp_sock->accept_queue = (struct ndpip_list_head) { &tcp_sock->accept_queue, &tcp_sock->accept_queue };
+		tcp_sock->parent_socket = NULL;
 	}
 
 	if (protocol == IPPROTO_UDP) {
@@ -199,20 +209,8 @@ int ndpip_bind(int sockfd, const struct sockaddr *addr, socklen_t addrlen)
 		return -1;
 	}
 
-	struct sockaddr_in *addr_in = (void *) addr;
-
-	for (size_t idx = 0; idx < NDPIP_TODO_MAX_FDS; idx++) {
-		if (socket_table[idx] == NULL)
-			continue;
-
-		if ((memcmp(&socket_table[idx]->local, addr_in, sizeof(struct sockaddr_in)) == 0) && (sock->protocol == socket_table[idx]->protocol)) {
-			errno = EADDRINUSE;
-			return -1;
-		}
-	}
-
-	sock->local = *addr_in;
-	sock->iface = ndpip_iface_get_by_inaddr(addr_in->sin_addr);
+	sock->local = *((struct sockaddr_in *) addr);
+	sock->iface = ndpip_iface_get_by_inaddr(sock->local.sin_addr);
 	sock->recv_tmp = malloc(sizeof(struct ndpip_pbuf *) * ndpip_iface_get_burst_size(sock->iface));
 	sock->recv_tmp_len = 0;
 
@@ -228,7 +226,7 @@ int ndpip_bind(int sockfd, const struct sockaddr *addr, socklen_t addrlen)
 	}
 
 	if (sock->protocol == IPPROTO_UDP) {
-		uint64_t hash = ndpip_socket_listening_hash(addr_in);
+		uint64_t hash = ndpip_socket_listening_hash(&sock->local);
 		ndpip_hashtable_put(ndpip_udp_listening_sockets, hash, sock);
 	}
 
@@ -262,6 +260,23 @@ int ndpip_listen(int sockfd, int backlog)
 		return -1;
 	}
 
+	for (size_t idx = 0; idx < NDPIP_TODO_MAX_FDS; idx++) {
+		if (socket_table[idx] == NULL)
+			continue;
+
+		struct ndpip_socket *csock = socket_table[idx];
+
+		if (csock == sock)
+			continue;
+
+		if ((memcmp(&csock->local, &sock->local, sizeof(struct sockaddr_in)) == 0) &&
+			(csock->protocol == sock->protocol)) {
+
+			errno = EADDRINUSE;
+			return -1;
+		}
+	}
+
 	tcp_sock->state = LISTENING;
 
 	uint64_t hash = ndpip_socket_listening_hash(&sock->local);
@@ -288,10 +303,36 @@ int ndpip_connect(int sockfd, const struct sockaddr *addr, socklen_t addrlen)
 		return -1;
 	}
 
-	struct sockaddr_in *addr_in = (void *) addr;
+	sock->remote = *((struct sockaddr_in *) addr);
 
-	sock->remote.sin_addr = addr_in->sin_addr;
-	sock->remote.sin_port = addr_in->sin_port;
+	bool find_local_port = false;
+	if (sock->local.sin_port == 0) {
+		find_local_port = true;
+		sock->local.sin_port = 1025;
+	}
+
+	for (size_t idx = 0; idx < NDPIP_TODO_MAX_FDS; idx++) {
+		if (socket_table[idx] == NULL)
+			continue;
+
+		struct ndpip_socket *csock = socket_table[idx];
+
+		if (csock == sock)
+			continue;
+
+		if ((memcmp(&csock->local, &sock->local, sizeof(struct sockaddr_in)) == 0) &&
+				(memcmp(&csock->remote, &sock->remote, sizeof(struct sockaddr_in)) == 0) &&
+				(csock->protocol == sock->protocol)) {
+
+			if (find_local_port) {
+				sock->local.sin_port++;
+				idx = 0;
+			} else {
+				errno = EADDRINUSE;
+				return -1;
+			}
+		}
+	}
 
 	if (sock->protocol == IPPROTO_TCP)
 		return ndpip_tcp_connect((struct ndpip_tcp_socket *) sock);
@@ -734,6 +775,21 @@ struct ndpip_socket *ndpip_socket_get_by_peer(struct sockaddr_in *local, struct 
 	}
 
 	return NULL;
+}
+
+uint32_t ndpip_socket_poll(struct ndpip_socket *sock)
+{
+	if (sock->protocol == IPPROTO_TCP) {
+		struct ndpip_tcp_socket *tcp_sock = (void *) sock;
+		return ndpip_tcp_poll(tcp_sock);
+	}
+
+	if (sock->protocol == IPPROTO_UDP) {
+		struct ndpip_udp_socket *udp_sock = (void *) sock;
+		return ndpip_udp_poll(udp_sock);
+	}
+
+	return 0;
 }
 
 /*

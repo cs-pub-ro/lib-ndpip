@@ -32,6 +32,7 @@ struct ndpip_tcp_socket {
 	struct ndpip_socket socket;
 
 	struct ndpip_list_head accept_queue;
+	struct ndpip_tcp_socket *parent_socket;
 
 	enum ndpip_tcp_socket_state {
 		NEW,
@@ -76,6 +77,7 @@ void ndpip_tcp_free_acked(struct ndpip_tcp_socket *tcp_sock);
 int ndpip_tcp_send(struct ndpip_tcp_socket *tcp_sock, struct ndpip_pbuf **pb, uint16_t cnt);
 void ndpip_tcp_rto_handler(void *argp);
 int ndpip_tcp_connect(struct ndpip_tcp_socket *tcp_sock);
+uint32_t ndpip_tcp_poll(struct ndpip_tcp_socket *tcp_sock);
 struct ndpip_tcp_socket *ndpip_tcp_accept(struct ndpip_tcp_socket *tcp_sock);
 int ndpip_tcp_close(struct ndpip_tcp_socket *tcp_sock);
 
