@@ -4,6 +4,7 @@
 #include "ndpip/util.h"
 #include "ndpip/iface.h"
 
+void ndpip_workhorse_init();
 int ndpip_rx_thread(void *argp);
 void ndpip_timers_thread(struct ndpip_iface *iface);
 void ndpip_timers_add(struct ndpip_timer *timer);

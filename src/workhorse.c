@@ -47,6 +47,7 @@ int ndpip_rx_thread(void *argp)
 
 	char iface_ethaddr[ETH_ALEN];
 	memcpy(iface_ethaddr, ndpip_iface_get_ethaddr(iface), ETH_ALEN);
+	struct ndpip_pbuf_pool *rx_pool = ndpip_iface_get_pbuf_pool_rx(iface);
 
 	while (ndpip_iface_rx_thread_running(iface)) {
 		ndpip_timers_hook(iface);
@@ -278,10 +279,10 @@ free_pkt:
 			freed_pkts[freed_pkt_cnt++] = pb;
 		}
 
-		ndpip_pbuf_pool_release(ndpip_iface_get_pbuf_pool_rx(iface), freed_pkts, freed_pkt_cnt);
+		ndpip_pbuf_pool_release(rx_pool, freed_pkts, freed_pkt_cnt);
 
 		size_t tmp_pkt_cnt = tcp_sockets_len;
-		assert(ndpip_pbuf_pool_request(ndpip_iface_get_pbuf_pool_tx(iface), replies, &tmp_pkt_cnt) >= 0);
+		assert(ndpip_pbuf_pool_request(rx_pool, replies, &tmp_pkt_cnt) >= 0);
 		assert(tmp_pkt_cnt == tcp_sockets_len);
 
 		for (uint16_t idx = 0; idx < tcp_sockets_len; idx++) {
@@ -309,7 +310,7 @@ free_pkt:
 		if (replies_len > 0)
 			ndpip_iface_xmit(iface, replies, replies_len, true);
 
-		ndpip_pbuf_pool_release(ndpip_iface_get_pbuf_pool_tx(iface), replies + replies_len, tcp_sockets_len - replies_len);
+		ndpip_pbuf_pool_release(rx_pool, replies + replies_len, tcp_sockets_len - replies_len);
 
 		for (uint16_t idx = 0; idx < udp_sockets_len; idx++) {
 			struct ndpip_udp_socket *udp_sock = udp_sockets[idx];
@@ -324,11 +325,20 @@ free_pkt:
 	return 0;
 }
 
-static NDPIP_LIST_HEAD(ndpip_timers_head);
+static struct ndpip_list_head ndpip_timers_list;
+static struct ndpip_mutex ndpip_timers_list_lock;
+
+void ndpip_workhorse_init()
+{
+	ndpip_list_init(&ndpip_timers_list);
+	ndpip_mutex_init(&ndpip_timers_list_lock);
+}
 
 void ndpip_timers_add(struct ndpip_timer *timer)
 {
-        ndpip_list_add(&ndpip_timers_head, (void *) timer);
+	ndpip_mutex_lock(&ndpip_timers_list_lock);
+	ndpip_list_add(&ndpip_timers_list, (void *) timer);
+	ndpip_mutex_unlock(&ndpip_timers_list_lock);
 }
 
 static void ndpip_timers_hook(struct ndpip_iface *iface)
@@ -339,10 +349,13 @@ static void ndpip_timers_hook(struct ndpip_iface *iface)
 
 	timer = 0;
 
-	ndpip_list_foreach(struct ndpip_timer, timer, &ndpip_timers_head) {
+	ndpip_mutex_lock(&ndpip_timers_list_lock);
+	ndpip_list_foreach(struct ndpip_timer, timer, &ndpip_timers_list) {
 		if (ndpip_timer_armed(timer) && ndpip_timer_expired(timer)) {
 			ndpip_timer_disarm(timer);
 			timer->func(timer->argp);
 		}
 	}
+
+	ndpip_mutex_unlock(&ndpip_timers_list_lock);
 }

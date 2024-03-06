@@ -148,7 +148,7 @@ int ndpip_epoll_wait(int epfd, struct epoll_event *events, int maxevents, int ti
 
 	struct timespec end = start;
 	struct timespec timeout_ts = {.tv_sec = timeout / 1000, .tv_nsec = (timeout % 1000) * 1000 };
-	ndpip_timespec_add(&end, timeout_ts);
+	ndpip_timespec_add(&end, &timeout_ts);
 
 	int idx = 0;
 	while (true) {

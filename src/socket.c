@@ -138,7 +138,8 @@ struct ndpip_socket *ndpip_socket_new(int domain, int type, int protocol)
 
 		tcp_sock->rx_mss = NDPIP_TCP_DEFAULT_MSS;
 
-		tcp_sock->accept_queue = (struct ndpip_list_head) { &tcp_sock->accept_queue, &tcp_sock->accept_queue };
+		ndpip_list_init(&tcp_sock->accept_queue);
+		ndpip_mutex_init(&tcp_sock->accept_queue_lock);
 		tcp_sock->parent_socket = NULL;
 	}
 

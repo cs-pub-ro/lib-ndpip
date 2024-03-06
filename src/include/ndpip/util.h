@@ -3,9 +3,18 @@
 
 #include "ndpip/pbuf.h"
 
+#include <pthread.h>
 #include <time.h>
 #include <stdbool.h>
 #include <stdint.h>
+
+#ifdef NDPIP_UK
+#include "ndpip/uk.h"
+#endif
+
+#ifdef NDPIP_LINUX_DPDK
+#include "ndpip/linux_dpdk.h"
+#endif
 
 struct ndpip_list_head {
 	struct ndpip_list_head *next;
@@ -16,8 +25,6 @@ struct ndpip_list_head {
 
 #define CN_GRANTS_GET 0
 #define CN_GRANTS_ADD 1
-
-#define NDPIP_LIST_HEAD(name) struct ndpip_list_head name = { (&name), (&name) };
 
 #define ndpip_list_foreach(type, var, list_head) \
 	for ( \
@@ -37,7 +44,7 @@ struct ndpip_list_head {
 struct ndpip_timer {
 	struct ndpip_list_head list;
 
-	bool armed;
+	_Atomic bool armed;
 	struct timespec timeout;
 	void (*func)(void *argp);
 	void *argp;
@@ -49,7 +56,7 @@ struct ndpip_ring {
 	size_t ring_mask;
 
 	size_t ring_start;
-	size_t ring_end;
+	_Atomic size_t ring_end;
 }; 
 
 struct ndpip_hlist_node {
@@ -62,6 +69,7 @@ struct ndpip_hashtable {
 	struct ndpip_list_head *hashtable_buckets;
 	uint64_t hashtable_length;
 	uint64_t hashtable_mask;
+	struct ndpip_mutex lock;
 };
 
 struct eqds_cn {
@@ -80,19 +88,20 @@ int ndpip_ring_flush(struct ndpip_ring *ring, size_t count);
 size_t ndpip_ring_size(struct ndpip_ring *ring);
 size_t ndpip_ring_free(struct ndpip_ring *ring);
 
+void ndpip_list_init(struct ndpip_list_head *list);
 void ndpip_list_add(struct ndpip_list_head *prev, struct ndpip_list_head *entry);
 void ndpip_list_del(struct ndpip_list_head *entry);
 
 typedef void (*ndpip_timer_callback_t)(void *argp);
 
 struct ndpip_timer *ndpip_timer_alloc(ndpip_timer_callback_t cb, void *argp);
-void ndpip_timer_arm(struct ndpip_timer *timer, struct timespec timeout);
-void ndpip_timer_arm_after(struct ndpip_timer *timer, struct timespec after);
+void ndpip_timer_arm(struct ndpip_timer *timer, struct timespec *timeout);
+void ndpip_timer_arm_after(struct ndpip_timer *timer, struct timespec *after);
 bool ndpip_timer_armed(struct ndpip_timer *timer);
 bool ndpip_timer_expired(struct ndpip_timer *timer);
 void ndpip_timer_disarm(struct ndpip_timer *timer);
 
-void ndpip_timespec_add(struct timespec *ts, struct timespec add);
+void ndpip_timespec_add(struct timespec *ts, struct timespec *add);
 
 static inline uint64_t rdtsc(void)
 {

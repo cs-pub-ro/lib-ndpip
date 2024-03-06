@@ -32,6 +32,7 @@ struct ndpip_tcp_socket {
 	struct ndpip_socket socket;
 
 	struct ndpip_list_head accept_queue;
+	struct ndpip_mutex accept_queue_lock;
 	struct ndpip_tcp_socket *parent_socket;
 
 	enum ndpip_tcp_socket_state {
@@ -66,7 +67,7 @@ struct ndpip_tcp_socket {
 	uint8_t tcp_recv_win_scale;
 	uint8_t tcp_send_win_scale;
 
-	bool tcp_rto;
+	_Atomic bool tcp_rto;
 	bool tcp_rsp_ack;
 	bool tcp_req_ack;
 };

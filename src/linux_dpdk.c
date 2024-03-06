@@ -6,6 +6,8 @@
 #include <assert.h>
 #include <unistd.h>
 
+#include <pthread.h>
+
 #include <rte_version.h>
 #include <rte_mbuf.h>
 #include <rte_ethdev.h>
@@ -28,7 +30,7 @@ bool ndpip_linux_dpdk_initialized = false;
 
 int ndpip_linux_dpdk_pbuf_pool_request(struct ndpip_pbuf_pool *pool, struct ndpip_pbuf **pbs, size_t *count)
 {
-	struct rte_mempool *p = (void *) pool;
+	struct rte_mempool *p = pool->pool;
 	struct rte_mbuf **mbs = (void *) pbs;
 	uint16_t count_tmp = *count;
 
@@ -88,41 +90,21 @@ int ndpip_linux_dpdk_register_iface(int netdev_id)
 
 #ifndef NDPIP_DEBUG_NO_CKSUM
 #if RTE_VERSION < RTE_VERSION_NUM(21, 11, 0, 0)
-	if ((&iface)->iface_dev_info.tx_offload_capa & DEV_TX_OFFLOAD_IPV4_CKSUM)
-        	(&iface)->iface_conf.txmode.offloads |= DEV_TX_OFFLOAD_IPV4_CKSUM;
-
-	if ((&iface)->iface_dev_info.tx_offload_capa & DEV_TX_OFFLOAD_TCP_CKSUM)
-        	(&iface)->iface_conf.txmode.offloads |= DEV_TX_OFFLOAD_TCP_CKSUM;
-
-	if ((&iface)->iface_dev_info.tx_offload_capa & DEV_TX_OFFLOAD_UDP_CKSUM)
-        	(&iface)->iface_conf.txmode.offloads |= DEV_TX_OFFLOAD_UDP_CKSUM;
-
-	if ((&iface)->iface_dev_info.rx_offload_capa & DEV_RX_OFFLOAD_IPV4_CKSUM)
-        	(&iface)->iface_conf.rxmode.offloads |= DEV_RX_OFFLOAD_IPV4_CKSUM;
-
-	if ((&iface)->iface_dev_info.rx_offload_capa & DEV_RX_OFFLOAD_TCP_CKSUM)
-        	(&iface)->iface_conf.rxmode.offloads |= DEV_RX_OFFLOAD_TCP_CKSUM;
-
-	if ((&iface)->iface_dev_info.rx_offload_capa & DEV_RX_OFFLOAD_UDP_CKSUM)
-        	(&iface)->iface_conf.rxmode.offloads |= DEV_RX_OFFLOAD_UDP_CKSUM;
+        (&iface)->iface_conf.txmode.offloads = (&iface)->iface_dev_info.tx_offload_capa & (
+			DEV_TX_OFFLOAD_IPV4_CKSUM |
+			DEV_TX_OFFLOAD_TCP_CKSUM |
+			DEV_TX_OFFLOAD_UDP_CKSUM |
+			DEV_RX_OFFLOAD_IPV4_CKSUM |
+			DEV_RX_OFFLOAD_TCP_CKSUM |
+			DEV_RX_OFFLOAD_UDP_CKSUM);
 #else 
-	if ((&iface)->iface_dev_info.tx_offload_capa & RTE_ETH_TX_OFFLOAD_IPV4_CKSUM)
-        	(&iface)->iface_conf.txmode.offloads |= RTE_ETH_TX_OFFLOAD_IPV4_CKSUM;
-
-	if ((&iface)->iface_dev_info.tx_offload_capa & RTE_ETH_TX_OFFLOAD_TCP_CKSUM)
-        	(&iface)->iface_conf.txmode.offloads |= RTE_ETH_TX_OFFLOAD_TCP_CKSUM;
-
-	if ((&iface)->iface_dev_info.tx_offload_capa & RTE_ETH_TX_OFFLOAD_UDP_CKSUM)
-        	(&iface)->iface_conf.txmode.offloads |= RTE_ETH_TX_OFFLOAD_UDP_CKSUM;
-
-	if ((&iface)->iface_dev_info.rx_offload_capa & RTE_ETH_RX_OFFLOAD_IPV4_CKSUM)
-        	(&iface)->iface_conf.rxmode.offloads |= RTE_ETH_RX_OFFLOAD_IPV4_CKSUM;
-
-	if ((&iface)->iface_dev_info.rx_offload_capa & RTE_ETH_RX_OFFLOAD_TCP_CKSUM)
-        	(&iface)->iface_conf.rxmode.offloads |= RTE_ETH_RX_OFFLOAD_TCP_CKSUM;
-
-	if ((&iface)->iface_dev_info.rx_offload_capa & RTE_ETH_RX_OFFLOAD_UDP_CKSUM)
-        	(&iface)->iface_conf.rxmode.offloads |= RTE_ETH_RX_OFFLOAD_UDP_CKSUM;
+        (&iface)->iface_conf.txmode.offloads = (&iface)->iface_dev_info.tx_offload_capa & (
+			RTE_ETH_TX_OFFLOAD_IPV4_CKSUM |
+			RTE_ETH_TX_OFFLOAD_TCP_CKSUM |
+			RTE_ETH_TX_OFFLOAD_UDP_CKSUM |
+			RTE_ETH_RX_OFFLOAD_IPV4_CKSUM |
+			RTE_ETH_RX_OFFLOAD_TCP_CKSUM |
+			RTE_ETH_RX_OFFLOAD_UDP_CKSUM);
 #endif
 #endif
 
@@ -131,19 +113,19 @@ int ndpip_linux_dpdk_register_iface(int netdev_id)
 		return -1;
 	}
 
-	(&iface)->iface_pbuf_pool_rx = (void *) rte_pktmbuf_pool_create("ndpip_pool_rx", NDPIP_RX_NB_MBUF, NDPIP_LINUX_DPDK_MEMPOOL_CACHE_SZ, NDPIP_LINUX_DPDK_MBUF_PRIVATE, NDPIP_MBUF_SIZE, rte_socket_id());
-	if ((&iface)->iface_pbuf_pool_rx == NULL) {
+	(&iface)->iface_pbuf_pool_rx.pool = rte_pktmbuf_pool_create("ndpip_pool_rx", NDPIP_RX_NB_MBUF, NDPIP_LINUX_DPDK_MEMPOOL_CACHE_SZ, NDPIP_LINUX_DPDK_MBUF_PRIVATE, NDPIP_MBUF_SIZE, rte_socket_id());
+	if ((&iface)->iface_pbuf_pool_rx.pool == NULL) {
 		perror("rte_pktmbuf_pool_create");
 		return -1;
 	}
 
-	(&iface)->iface_pbuf_pool_tx = (void *) rte_pktmbuf_pool_create("ndpip_pool_tx", NDPIP_TX_NB_MBUF, NDPIP_LINUX_DPDK_MEMPOOL_CACHE_SZ, NDPIP_LINUX_DPDK_MBUF_PRIVATE, NDPIP_MBUF_SIZE, rte_socket_id());
-	if ((&iface)->iface_pbuf_pool_tx == NULL) {
+	(&iface)->iface_pbuf_pool_tx.pool = (void *) rte_pktmbuf_pool_create("ndpip_pool_tx", NDPIP_TX_NB_MBUF, NDPIP_LINUX_DPDK_MEMPOOL_CACHE_SZ, NDPIP_LINUX_DPDK_MBUF_PRIVATE, NDPIP_MBUF_SIZE, rte_socket_id());
+	if ((&iface)->iface_pbuf_pool_tx.pool == NULL) {
 		perror("rte_pktmbuf_pool_create");
 		return -1;
 	}
 
-	if (rte_eth_rx_queue_setup((&iface)->iface_netdev_id, (&iface)->iface_rx_queue_id, NDPIP_LINUX_DPDK_RX_DESC, rte_eth_dev_socket_id((&iface)->iface_netdev_id), NULL, (void *) (&iface)->iface_pbuf_pool_rx) < 0) {
+	if (rte_eth_rx_queue_setup((&iface)->iface_netdev_id, (&iface)->iface_rx_queue_id, NDPIP_LINUX_DPDK_RX_DESC, rte_eth_dev_socket_id((&iface)->iface_netdev_id), NULL, (void *) (&iface)->iface_pbuf_pool_rx.pool) < 0) {
 		perror("rte_eth_rx_queue_setup");
 		return -1;
 	}
@@ -152,6 +134,8 @@ int ndpip_linux_dpdk_register_iface(int netdev_id)
 		perror("rte_eth_tx_queue_setup");
 		return -1;
 	}
+
+	ndpip_mutex_init(&(&iface)->iface_tx_lock);
 
 	(&iface)->iface_rx_thread_running = false;
 
@@ -191,6 +175,7 @@ int ndpip_linux_dpdk_iface_xmit(struct ndpip_iface *iface, struct ndpip_pbuf **p
 	rte_eth_tx_prepare(iface_linux_dpdk->iface_netdev_id, iface_linux_dpdk->iface_tx_queue_id, mbs, cnt);
 	uint16_t max_burst = ndpip_iface_get_burst_size(iface);
 
+	ndpip_mutex_lock(&iface_linux_dpdk->iface_tx_lock);
 	for (uint16_t idx = 0; idx < cnt;) {
 		uint16_t cnt2 = cnt - idx;
 		cnt2 = max_burst < cnt2 ? max_burst : cnt2;
@@ -200,6 +185,8 @@ int ndpip_linux_dpdk_iface_xmit(struct ndpip_iface *iface, struct ndpip_pbuf **p
 			iface_linux_dpdk->iface_tx_queue_id,
 			mbs + idx, cnt2);
 	}
+
+	ndpip_mutex_unlock(&iface_linux_dpdk->iface_tx_lock);
 
 	return 0;
 }
@@ -323,7 +310,7 @@ struct ether_addr *ndpip_linux_dpdk_iface_resolve_arp(struct ndpip_iface *iface,
         return NULL;
 }
 
-int ndpip_linux_dpdk_pbuf_pool_release(struct ndpip_pbuf_pool *_, struct ndpip_pbuf **pbs, size_t count)
+int ndpip_linux_dpdk_pbuf_pool_release(struct ndpip_pbuf_pool *pool, struct ndpip_pbuf **pbs, size_t count)
 {
         if (count == 0)                                                    
                 return 0;
@@ -586,5 +573,21 @@ void ndpip_linux_dpdk_init()
 		tsc_hz = rte_get_tsc_hz();
 		ndpip_socket_init();
 		ndpip_epoll_init();
+		ndpip_workhorse_init();
 	}
+}
+
+void ndpip_linux_dpdk_mutex_init(struct ndpip_mutex *mutex)
+{
+	pthread_mutex_init(&mutex->mutex, NULL);
+}
+
+void ndpip_linux_dpdk_mutex_lock(struct ndpip_mutex *mutex)
+{
+	pthread_mutex_lock(&mutex->mutex);
+}
+
+void ndpip_linux_dpdk_mutex_unlock(struct ndpip_mutex *mutex)
+{
+	pthread_mutex_unlock(&mutex->mutex);
 }

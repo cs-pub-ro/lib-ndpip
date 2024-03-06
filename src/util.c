@@ -131,6 +131,12 @@ int ndpip_ring_pop(struct ndpip_ring *ring, size_t *count, struct ndpip_pbuf **p
 	return ndpip_ring_pop0(ring, count, pbs, true);
 }
 
+void ndpip_list_init(struct ndpip_list_head *list)
+{
+	list->prev = list;
+	list->next = list;
+}
+
 void ndpip_list_add(struct ndpip_list_head *prev, struct ndpip_list_head *element)
 {
 	element->next = prev->next;
@@ -166,17 +172,17 @@ bool ndpip_timer_expired(struct ndpip_timer *timer)
 	return false;
 }
 
-void ndpip_timer_arm_after(struct ndpip_timer *timer, struct timespec after)
+void ndpip_timer_arm_after(struct ndpip_timer *timer, struct timespec *after)
 {
 	struct timespec expire;
 	ndpip_time_now(&expire);
 	ndpip_timespec_add(&expire, after);
-	ndpip_timer_arm(timer, expire);
+	ndpip_timer_arm(timer, &expire);
 }
 
-void ndpip_timer_arm(struct ndpip_timer *timer, struct timespec timeout)
+void ndpip_timer_arm(struct ndpip_timer *timer, struct timespec *timeout)
 {
-	timer->timeout = timeout;
+	timer->timeout = *timeout;
 	timer->armed = true;
 }
 
@@ -201,9 +207,9 @@ struct ndpip_timer *ndpip_timer_alloc(ndpip_timer_callback_t cb, void *argp)
 	return ret;
 }
 
-void ndpip_timespec_add(struct timespec *ts, struct timespec add)
+void ndpip_timespec_add(struct timespec *ts, struct timespec *add)
 {
-	int64_t nsec = (ts->tv_sec + (&add)->tv_sec) * NDPIP_NSEC_IN_SEC + (ts->tv_nsec + (&add)->tv_nsec);
+	int64_t nsec = (ts->tv_sec + add->tv_sec) * NDPIP_NSEC_IN_SEC + (ts->tv_nsec + add->tv_nsec);
 
 	ts->tv_sec = nsec / NDPIP_NSEC_IN_SEC;
 	ts->tv_nsec = nsec % NDPIP_NSEC_IN_SEC;
@@ -213,6 +219,7 @@ struct ndpip_hashtable *ndpip_hashtable_alloc(uint64_t buckets)
 {
 	struct ndpip_hashtable *ret = malloc(sizeof(struct ndpip_hashtable));
 
+	ndpip_mutex_init(&ret->lock);
 	ret->hashtable_buckets = malloc(sizeof(struct ndpip_list_head) * buckets);
 	ret->hashtable_mask = buckets - 1;
 	ret->hashtable_length = buckets;
@@ -227,10 +234,15 @@ void *ndpip_hashtable_get(struct ndpip_hashtable *hashtable, uint64_t hash)
 {
 	struct ndpip_list_head *bucket = (void *) &hashtable->hashtable_buckets[hash & hashtable->hashtable_mask];
 
+	ndpip_mutex_lock(&hashtable->lock);
 	ndpip_list_foreach(struct ndpip_hlist_node, hnode, bucket) {
-		if (hnode->hnode_hash == hash)
+		if (hnode->hnode_hash == hash) {
+			ndpip_mutex_unlock(&hashtable->lock);
 			return hnode->hnode_data;
+		}
 	}
+
+	ndpip_mutex_unlock(&hashtable->lock);
 
 	return NULL;
 }
@@ -242,15 +254,19 @@ void ndpip_hashtable_put(struct ndpip_hashtable *hashtable, uint64_t hash, void 
 	struct ndpip_hlist_node *hnode = malloc(sizeof(struct ndpip_hlist_node));
 	hnode->hnode_hash = hash;
 	hnode->hnode_data = data;
+	ndpip_list_init((void *) hnode);
 
+	ndpip_mutex_lock(&hashtable->lock);
 	ndpip_list_add(bucket, (struct ndpip_list_head *) hnode);
+	ndpip_mutex_unlock(&hashtable->lock);
 }
 
 void ndpip_hashtable_del(struct ndpip_hashtable *hashtable, uint64_t hash)
 {
 	struct ndpip_list_head *bucket = (void *) &hashtable->hashtable_buckets[hash & hashtable->hashtable_mask];
-
 	struct ndpip_hlist_node *rmnode = NULL;
+
+	ndpip_mutex_lock(&hashtable->lock);
 	ndpip_list_foreach(struct ndpip_hlist_node, hnode, bucket) {
 		if (hnode->hnode_hash == hash)
 			rmnode = hnode;
@@ -260,4 +276,6 @@ void ndpip_hashtable_del(struct ndpip_hashtable *hashtable, uint64_t hash)
 		ndpip_list_del((struct ndpip_list_head *) rmnode);
 		free(rmnode);
 	}
+
+	ndpip_mutex_unlock(&hashtable->lock);
 }

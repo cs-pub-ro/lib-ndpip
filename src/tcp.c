@@ -71,13 +71,16 @@ struct ndpip_tcp_socket *ndpip_tcp_accept(struct ndpip_tcp_socket *tcp_sock)
 		return NULL;
 	}
 
+	ndpip_mutex_lock(&tcp_sock->accept_queue_lock);
 	if (tcp_sock->accept_queue.next == &tcp_sock->accept_queue) {
+		ndpip_mutex_unlock(&tcp_sock->accept_queue_lock);
 		errno = EAGAIN;
 		return NULL;
 	}
 
 	struct ndpip_tcp_socket *asock = ((void *) tcp_sock->accept_queue.next) - offsetof(struct ndpip_tcp_socket, accept_queue);
 	ndpip_list_del(tcp_sock->accept_queue.next);
+	ndpip_mutex_unlock(&tcp_sock->accept_queue_lock);
 
 	return asock;
 }
@@ -120,6 +123,7 @@ int ndpip_tcp_connect(struct ndpip_tcp_socket *tcp_sock)
 	}
 
 	tcp_sock->tcp_last_ack = tcp_sock->tcp_seq;
+	tcp_sock->state = CONNECTING;
 
 	if (ndpip_tcp_build_meta(tcp_sock, TH_SYN, pb) < 0) {
 		tcp_sock->state = CLOSED;
@@ -127,11 +131,10 @@ int ndpip_tcp_connect(struct ndpip_tcp_socket *tcp_sock)
 		return -1;
 	}
 
+	tcp_sock->tcp_seq++;
+
 	uint64_t hash = ndpip_socket_established_hash(&sock->local, &sock->remote);
 	ndpip_hashtable_put(ndpip_tcp_established_sockets, hash, sock);
-
-	tcp_sock->state = CONNECTING;
-	tcp_sock->tcp_seq++;
 
 	ndpip_tcp_send_one(tcp_sock, pb);
 
@@ -281,7 +284,7 @@ void ndpip_tcp_rto_handler(void *argp) {
 	//ndpip_iface_xmit(sock->iface, &pb, 1, true);
 
 	if (!ndpip_timer_armed(tcp_sock->timer_rto))
-		ndpip_timer_arm_after(tcp_sock->timer_rto, NDPIP_TODO_TCP_RETRANSMIT_TIMEOUT);
+		ndpip_timer_arm_after(tcp_sock->timer_rto, &NDPIP_TODO_TCP_RETRANSMIT_TIMEOUT);
 
 	return;
 
@@ -476,7 +479,7 @@ int ndpip_tcp_send(struct ndpip_tcp_socket *tcp_sock, struct ndpip_pbuf **pb, ui
 
 	cnt = cnt < xmit_ring_free ? cnt : xmit_ring_free;
 	if (!ndpip_timer_armed(tcp_sock->timer_rto))
-		ndpip_timer_arm_after(tcp_sock->timer_rto, NDPIP_TODO_TCP_RETRANSMIT_TIMEOUT);
+		ndpip_timer_arm_after(tcp_sock->timer_rto, &NDPIP_TODO_TCP_RETRANSMIT_TIMEOUT);
 
 	uint16_t idx;
 	uint32_t tcp_seq = tcp_sock->tcp_seq;
@@ -537,7 +540,7 @@ static int ndpip_tcp_send_one(struct ndpip_tcp_socket *tcp_sock, struct ndpip_pb
 	struct ndpip_socket *sock = &tcp_sock->socket;
 
 	if (!ndpip_timer_armed(tcp_sock->timer_rto))
-		ndpip_timer_arm_after(tcp_sock->timer_rto, NDPIP_TODO_TCP_RETRANSMIT_TIMEOUT);
+		ndpip_timer_arm_after(tcp_sock->timer_rto, &NDPIP_TODO_TCP_RETRANSMIT_TIMEOUT);
 
 #ifdef NDPIP_GRANTS_ENABLE
 	uint16_t pbuf_len = ndpip_pbuf_length(pb);
@@ -679,7 +682,7 @@ int ndpip_tcp_flush(struct ndpip_tcp_socket *tcp_sock, struct ndpip_pbuf *rpb)
 	//printf("flush\n");
 	if (tcp_sock->tcp_req_ack) {
 		if (ndpip_timer_armed(tcp_sock->timer_rto))
-			ndpip_timer_arm_after(tcp_sock->timer_rto, NDPIP_TODO_TCP_RETRANSMIT_TIMEOUT);
+			ndpip_timer_arm_after(tcp_sock->timer_rto, &NDPIP_TODO_TCP_RETRANSMIT_TIMEOUT);
 
 		tcp_sock->tcp_req_ack = false;
 	}
@@ -715,7 +718,7 @@ int ndpip_tcp_feed(struct ndpip_tcp_socket *tcp_sock, struct sockaddr_in *remote
 		if (tcp_state != CONNECTING) {
 			// Out of order or unseen segment
 			if (tcp_seq != tcp_sock->tcp_ack) {
-				//printf("ndpip_tcp_feed: Out of order or unseen segment: tcp_sock=%p; seq=%u; expected_seq=%u;\n", tcp_sock, tcp_seq, tcp_sock->tcp_ack);
+				printf("ndpip_tcp_feed: Out of order or unseen segment: local_port=%hu; remote_port=%hu; seq=%u; expected_seq=%u;\n", tcp_sock->socket.local.sin_port, tcp_sock->socket.remote.sin_port, tcp_seq, tcp_sock->tcp_ack);
 				tcp_sock->tcp_rsp_ack = true;
 				return 0;
 			}
@@ -725,7 +728,7 @@ int ndpip_tcp_feed(struct ndpip_tcp_socket *tcp_sock, struct sockaddr_in *remote
 			uint32_t tcp_last_ack = tcp_sock->tcp_last_ack;
 			// Bad ACK
 			if ((tcp_ack - tcp_last_ack) > (tcp_sock->tcp_seq - tcp_last_ack)) {
-				//printf("ndpip_tcp_feed: Bad ACK\n");
+				printf("ndpip_tcp_feed: Bad ACK ack=%u;\n", tcp_ack);
 				return 0;
 			}
 
@@ -785,7 +788,7 @@ int ndpip_tcp_feed(struct ndpip_tcp_socket *tcp_sock, struct sockaddr_in *remote
 		uint64_t hash = ndpip_socket_established_hash(&asock->local, &asock->remote);
 		ndpip_hashtable_put(ndpip_tcp_established_sockets, hash, asock);
 
-		if (ndpip_sock_alloc((struct ndpip_socket *) tcp_asock, &rpb, 1, false) == 0) {
+		if (ndpip_sock_alloc((struct ndpip_socket *) tcp_asock, &rpb, 1, true) == 0) {
 			tcp_sock = tcp_asock;
 			goto err;
 		}
@@ -806,7 +809,7 @@ int ndpip_tcp_feed(struct ndpip_tcp_socket *tcp_sock, struct sockaddr_in *remote
 
 		ndpip_tcp_parse_opts(tcp_sock, th, th_hlen);
 
-		if (ndpip_sock_alloc((struct ndpip_socket *) tcp_sock, &rpb, 1, false) == 0)
+		if (ndpip_sock_alloc((struct ndpip_socket *) tcp_sock, &rpb, 1, true) == 0)
 			goto err;
 
 		ndpip_tcp_build_meta(tcp_sock, TH_ACK, rpb);
@@ -825,7 +828,9 @@ int ndpip_tcp_feed(struct ndpip_tcp_socket *tcp_sock, struct sockaddr_in *remote
 			goto err;
 
 		tcp_sock->state = CONNECTED;
+		ndpip_mutex_lock(&tcp_sock->parent_socket->accept_queue_lock);
 		ndpip_list_add(&tcp_sock->parent_socket->accept_queue, &tcp_sock->accept_queue);
+		ndpip_mutex_unlock(&tcp_sock->parent_socket->accept_queue_lock);
 
 		return 0;
 	}
@@ -930,7 +935,7 @@ err:
 	ndpip_tcp_close_established(tcp_sock);
 
 err_l:
-	if (ndpip_sock_alloc((struct ndpip_socket *) tcp_sock, &rpb, 1, false) == 0)
+	if (ndpip_sock_alloc((struct ndpip_socket *) tcp_sock, &rpb, 1, true) == 0)
 		return 0;
 
 	ndpip_tcp_build_meta(tcp_sock, TH_RST, rpb);
