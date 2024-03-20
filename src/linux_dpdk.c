@@ -32,13 +32,15 @@ int ndpip_linux_dpdk_pbuf_pool_request(struct ndpip_pbuf_pool *pool, struct ndpi
 {
 	struct rte_mempool *p = pool->pool;
 	struct rte_mbuf **mbs = (void *) pbs;
-	uint16_t count_tmp = *count;
+	size_t count_tmp = *count;
 
 	for (size_t idx = 0; idx < count_tmp;) {
 		size_t count1 = count_tmp - idx;
-		count1 = count1 < UINT_MAX ? count1 : UINT_MAX;
-		if (rte_pktmbuf_alloc_bulk(p, mbs + idx, count1) != 0)
+		unsigned int count2 = count1 < UINT_MAX ? count1 : UINT_MAX;
+		if (rte_pktmbuf_alloc_bulk(p, mbs + idx, count2) != 0) {
+			ndpip_linux_dpdk_pbuf_pool_release(pool, pbs, idx);
 			return -1;
+		}
 
 		idx += count1;
 	}

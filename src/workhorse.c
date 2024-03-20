@@ -49,6 +49,8 @@ int ndpip_rx_thread(void *argp)
 	memcpy(iface_ethaddr, ndpip_iface_get_ethaddr(iface), ETH_ALEN);
 	struct ndpip_pbuf_pool *rx_pool = ndpip_iface_get_pbuf_pool_rx(iface);
 
+	uint64_t start = 0, burst_delay_a = 0;
+
 	while (ndpip_iface_rx_thread_running(iface)) {
 		ndpip_timers_hook(iface);
 
@@ -60,7 +62,10 @@ int ndpip_rx_thread(void *argp)
 
 		int r = ndpip_iface_rx_burst(iface, (void *) pkts, &pkt_cnt);
 
-		iter2++;
+		if (start != 0)
+			burst_delay_a += ndpip_tsc() - start;
+
+		start = ndpip_tsc();
 
 		if (iter++ >= 10000UL) {
 			struct timespec now;
@@ -69,10 +74,15 @@ int ndpip_rx_thread(void *argp)
                         uint64_t delta = (now.tv_sec - before.tv_sec) * NDPIP_NSEC_IN_SEC + (now.tv_nsec - before.tv_nsec);
 			if (delta > NDPIP_NSEC_IN_SEC) {
 				if (pkt_cnt_a != 0)
-					printf("ndpip_rx_thread: avg_burst=%lf; avg_replies=%lf; pps=%lf;\n", ((double) pkt_cnt_a) / iter2, ((double) replies_len_a) / iter2, ((double) pkt_cnt_a) * NDPIP_NSEC_IN_SEC / delta);
+					printf("ndpip_rx_thread: avg_burst=%lf; avg_replies=%lf; pps=%lf; burst_tsc=%lf;\n",
+							((double) pkt_cnt_a) / iter2,
+							((double) replies_len_a) / iter2,
+							((double) pkt_cnt_a) * NDPIP_NSEC_IN_SEC / delta,
+							((double) burst_delay_a) / iter2);
 
 				replies_len_a = 0;
 				pkt_cnt_a = 0;
+				burst_delay_a = 0;
 				before = now;
 
 				iter2 = 0;
@@ -81,10 +91,12 @@ int ndpip_rx_thread(void *argp)
 			iter = 0;
 		}
 
+		iter2++;
+
+		struct ndpip_tcp_socket *tcp_sockets[pkt_cnt];
 		if ((r < 0) || (pkt_cnt == 0))
 			continue;
 
-		struct ndpip_tcp_socket *tcp_sockets[pkt_cnt];
 		uint16_t tcp_sockets_len = 0;
 
 		struct ndpip_udp_socket *udp_sockets[pkt_cnt];
