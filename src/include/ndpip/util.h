@@ -61,14 +61,14 @@ struct ndpip_ring {
 
 struct ndpip_hlist_node {
 	struct ndpip_list_head hnode_list;
-	uint64_t hnode_hash;
+	uint32_t hnode_hash;
 	void *hnode_data;
 };
 
 struct ndpip_hashtable {
 	struct ndpip_list_head *hashtable_buckets;
 	uint64_t hashtable_length;
-	uint64_t hashtable_mask;
+	uint32_t hashtable_mask;
 	struct ndpip_mutex lock;
 };
 
@@ -111,8 +111,8 @@ static inline uint64_t rdtsc(void)
 }
 
 struct ndpip_hashtable *ndpip_hashtable_alloc(size_t buckets);
-void *ndpip_hashtable_get(struct ndpip_hashtable *hashtable, uint64_t hash);
-void ndpip_hashtable_put(struct ndpip_hashtable *hashtable, uint64_t hash, void *data);
-void ndpip_hashtable_del(struct ndpip_hashtable *hashtable, uint64_t hash);
+void *ndpip_hashtable_get(struct ndpip_hashtable *hashtable, uint32_t hash);
+void ndpip_hashtable_put(struct ndpip_hashtable *hashtable, uint32_t hash, void *data);
+void ndpip_hashtable_del(struct ndpip_hashtable *hashtable, uint32_t hash);
 
 #endif

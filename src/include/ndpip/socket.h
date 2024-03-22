@@ -68,8 +68,8 @@ uint32_t ndpip_socket_poll(struct ndpip_socket *sock);
 int ndpip_sock_free(struct ndpip_socket *sock, struct ndpip_pbuf **pb, size_t len, bool rx);
 size_t ndpip_sock_alloc(struct ndpip_socket *sock, struct ndpip_pbuf **pb, size_t len, bool rx);
 struct ndpip_socket *ndpip_socket_get_by_peer(struct sockaddr_in *local, struct sockaddr_in *remote, int protocol);
-uint64_t ndpip_socket_listening_hash(struct sockaddr_in *local);
-uint64_t ndpip_socket_established_hash(struct sockaddr_in *local, struct sockaddr_in *remote);
+uint32_t ndpip_socket_listening_hash(struct sockaddr_in *local);
+uint32_t ndpip_socket_established_hash(struct sockaddr_in *local, struct sockaddr_in *remote);
 #ifdef NDPIP_GRANTS_ENABLE
 int ndpip_socket_grants_get(struct ndpip_socket *sock, uint32_t grants);
 uint16_t ndpip_socket_pbuf_cost(struct ndpip_socket *sock, struct ndpip_pbuf *pb);

@@ -227,7 +227,7 @@ int ndpip_bind(int sockfd, const struct sockaddr *addr, socklen_t addrlen)
 	}
 
 	if (sock->protocol == IPPROTO_UDP) {
-		uint64_t hash = ndpip_socket_listening_hash(&sock->local);
+		uint32_t hash = ndpip_socket_listening_hash(&sock->local);
 		ndpip_hashtable_put(ndpip_udp_listening_sockets, hash, sock);
 	}
 
@@ -280,7 +280,7 @@ int ndpip_listen(int sockfd, int backlog)
 
 	tcp_sock->state = LISTENING;
 
-	uint64_t hash = ndpip_socket_listening_hash(&sock->local);
+	uint32_t hash = ndpip_socket_listening_hash(&sock->local);
 	ndpip_hashtable_put(ndpip_tcp_listening_sockets, hash, sock);
 
 	return 0;
@@ -741,28 +741,65 @@ int ndpip_close(int sockfd)
 	return -1;
 }
 
-uint64_t ndpip_socket_established_hash(struct sockaddr_in *local, struct sockaddr_in *remote)
+#define NDPIP_XXH32_PRIME2 2246822519U
+#define NDPIP_XXH32_PRIME3 3266489917U
+#define NDPIP_XXH32_PRIME4  668265263U
+#define NDPIP_XXH32_PRIME5  374761393U
+
+#define NDPIP_XXH32_ROTL(x, bits) (((x) << (bits)) | ((x) >> (32 - (bits))))
+#define NDPIP_XXH32_FINISH(x) do \
+{ \
+	x ^= x >> 15; \
+	x *= NDPIP_XXH32_PRIME2; \
+	\
+	x ^= x >> 13; \
+	x *= NDPIP_XXH32_PRIME3; \
+	\
+	x ^= x >> 16; \
+} while (0)
+
+uint32_t ndpip_socket_established_hash(struct sockaddr_in *local, struct sockaddr_in *remote)
 {
-	uint64_t saddr = local->sin_addr.s_addr, sport = local->sin_port, daddr = remote->sin_addr.s_addr, dport = remote->sin_port;
-	return (saddr ^ (sport | (dport << 16))) | (daddr << 32);
+	uint32_t ret = NDPIP_XXH32_PRIME5;
+
+	uint32_t saddr = local->sin_addr.s_addr;
+	uint32_t daddr = remote->sin_addr.s_addr;
+	uint32_t ports = local->sin_port << 16 | remote->sin_port;
+
+	ret = NDPIP_XXH32_ROTL(ret + saddr * NDPIP_XXH32_PRIME3, 17) * NDPIP_XXH32_PRIME4;
+	ret = NDPIP_XXH32_ROTL(ret + daddr * NDPIP_XXH32_PRIME3, 17) * NDPIP_XXH32_PRIME4;
+	ret = NDPIP_XXH32_ROTL(ret + ports * NDPIP_XXH32_PRIME3, 17) * NDPIP_XXH32_PRIME4;
+	
+	NDPIP_XXH32_FINISH(ret);
+
+	return ret;
 }
 
-uint64_t ndpip_socket_listening_hash(struct sockaddr_in *local)
+uint32_t ndpip_socket_listening_hash(struct sockaddr_in *local)
 {
-	uint64_t saddr = local->sin_addr.s_addr, sport = local->sin_port;
-	return saddr | (sport << 32);
+	uint32_t ret = NDPIP_XXH32_PRIME5;
+
+	uint32_t saddr = local->sin_addr.s_addr;
+	uint32_t ports = local->sin_port;
+
+	ret = NDPIP_XXH32_ROTL(ret + saddr * NDPIP_XXH32_PRIME3, 17) * NDPIP_XXH32_PRIME4;
+	ret = NDPIP_XXH32_ROTL(ret + ports * NDPIP_XXH32_PRIME3, 17) * NDPIP_XXH32_PRIME4;
+	
+	NDPIP_XXH32_FINISH(ret);
+
+	return ret;
 }
 
 struct ndpip_socket *ndpip_socket_get_by_peer(struct sockaddr_in *local, struct sockaddr_in *remote, int protocol)
 {
-	uint64_t hash1 = ndpip_socket_established_hash(local, remote);
+	uint32_t hash1 = ndpip_socket_established_hash(local, remote);
 
 	if (protocol == IPPROTO_TCP) {
 		struct ndpip_socket *ret = ndpip_hashtable_get(ndpip_tcp_established_sockets, hash1);
 		if (ret != NULL)
 			return ret;
 
-		uint64_t hash2 = ndpip_socket_listening_hash(local);
+		uint32_t hash2 = ndpip_socket_listening_hash(local);
 		return ndpip_hashtable_get(ndpip_tcp_listening_sockets, hash2);
 	}
 
@@ -771,7 +808,7 @@ struct ndpip_socket *ndpip_socket_get_by_peer(struct sockaddr_in *local, struct 
 		if (ret != NULL)
 			return ret;
 
-		uint64_t hash2 = ndpip_socket_listening_hash(local);
+		uint32_t hash2 = ndpip_socket_listening_hash(local);
 		return ndpip_hashtable_get(ndpip_udp_listening_sockets, hash2);
 	}
 

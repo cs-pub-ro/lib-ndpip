@@ -230,7 +230,7 @@ struct ndpip_hashtable *ndpip_hashtable_alloc(uint64_t buckets)
 	return ret;
 }
 
-void *ndpip_hashtable_get(struct ndpip_hashtable *hashtable, uint64_t hash)
+void *ndpip_hashtable_get(struct ndpip_hashtable *hashtable, uint32_t hash)
 {
 	struct ndpip_list_head *bucket = (void *) &hashtable->hashtable_buckets[hash & hashtable->hashtable_mask];
 
@@ -247,7 +247,7 @@ void *ndpip_hashtable_get(struct ndpip_hashtable *hashtable, uint64_t hash)
 	return NULL;
 }
 
-void ndpip_hashtable_put(struct ndpip_hashtable *hashtable, uint64_t hash, void *data)
+void ndpip_hashtable_put(struct ndpip_hashtable *hashtable, uint32_t hash, void *data)
 {
 	struct ndpip_list_head *bucket = (void *) &hashtable->hashtable_buckets[hash & hashtable->hashtable_mask];
 
@@ -261,7 +261,7 @@ void ndpip_hashtable_put(struct ndpip_hashtable *hashtable, uint64_t hash, void 
 	ndpip_mutex_unlock(&hashtable->lock);
 }
 
-void ndpip_hashtable_del(struct ndpip_hashtable *hashtable, uint64_t hash)
+void ndpip_hashtable_del(struct ndpip_hashtable *hashtable, uint32_t hash)
 {
 	struct ndpip_list_head *bucket = (void *) &hashtable->hashtable_buckets[hash & hashtable->hashtable_mask];
 	struct ndpip_hlist_node *rmnode = NULL;
