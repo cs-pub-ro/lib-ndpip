@@ -18,7 +18,7 @@
 #include "ndpip/linux_dpdk.h"
 #endif
 
-#define NDPIP_TODO_MAX_FDS 1024
+#define NDPIP_TODO_MAX_FDS (1 << 20)
 #define NDPIP_SOCKET_XMIT_RING_LENGTH (1 << 20)
 #define NDPIP_SOCKET_RECV_RING_LENGTH (1 << 15)
 

@@ -13,8 +13,8 @@
 #define NDPIP_TCP_DEFAULT_MSS (ETH_DATA_LEN - (sizeof(struct ether_header) + sizeof(struct iphdr) + sizeof(struct tcphdr)))
 #define NDPIP_UDP_DEFAULT_MSS (ETH_DATA_LEN - (sizeof(struct ether_header) + sizeof(struct iphdr) + sizeof(struct udphdr)))
 
-#define NDPIP_TODO_ESTABLISHED_SOCKETS_BUCKETS 1024
-#define NDPIP_TODO_LISTENING_SOCKETS_BUCKETS 32
+#define NDPIP_TODO_ESTABLISHED_SOCKETS_BUCKETS 65536
+#define NDPIP_TODO_LISTENING_SOCKETS_BUCKETS 1024
 
 #define NDPIP_EQDS_GRANTS_OVERHEAD 60
 
