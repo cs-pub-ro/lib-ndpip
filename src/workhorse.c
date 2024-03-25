@@ -355,18 +355,20 @@ void ndpip_timers_add(struct ndpip_timer *timer)
 
 static void ndpip_timers_hook(struct ndpip_iface *iface)
 {
-	static int timer = 0;
-	if (++timer < 1000)
+	static int timer_s = 0;
+	if (++timer_s < 1000)
 		return;
 
-	timer = 0;
+	timer_s = 0;
+
+	static struct ndpip_timer *timer_t = (void *) &ndpip_timers_list;
 
 	ndpip_mutex_lock(&ndpip_timers_list_lock);
-	ndpip_list_foreach(struct ndpip_timer, timer, &ndpip_timers_list) {
-		if (ndpip_timer_armed(timer) && ndpip_timer_expired(timer)) {
-			ndpip_timer_disarm(timer);
-			timer->func(timer->argp);
-		}
+
+	timer_t = (void *) timer_t->list.next;
+	if (ndpip_timer_armed(timer_t) && ndpip_timer_expired(timer_t)) {
+		ndpip_timer_disarm(timer_t);
+		timer_t->func(timer_t->argp);
 	}
 
 	ndpip_mutex_unlock(&ndpip_timers_list_lock);
