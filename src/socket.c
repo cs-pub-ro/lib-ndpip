@@ -12,6 +12,8 @@
 
 #define NDPIP_TCP_DEFAULT_MSS (ETH_DATA_LEN - (sizeof(struct ether_header) + sizeof(struct iphdr) + sizeof(struct tcphdr)))
 #define NDPIP_UDP_DEFAULT_MSS (ETH_DATA_LEN - (sizeof(struct ether_header) + sizeof(struct iphdr) + sizeof(struct udphdr)))
+#define NDPIP_MIN_UNPRIV_PORT 1024
+#define NDPIP_MAX_LOCAL_PORT_RETRIES 1024
 
 #define NDPIP_TODO_ESTABLISHED_SOCKETS_BUCKETS 65536
 #define NDPIP_TODO_LISTENING_SOCKETS_BUCKETS 1024
@@ -306,32 +308,37 @@ int ndpip_connect(int sockfd, const struct sockaddr *addr, socklen_t addrlen)
 
 	sock->remote = *((struct sockaddr_in *) addr);
 
-	bool find_local_port = false;
+	struct ndpip_hashtable *htable;
+
+	if (sock->protocol == IPPROTO_UDP)
+		htable = ndpip_udp_established_sockets;
+
+	else if (sock->protocol == IPPROTO_TCP)
+		htable = ndpip_tcp_established_sockets;
+
+	else
+		return -1;
+
 	if (sock->local.sin_port == 0) {
-		find_local_port = true;
-		sock->local.sin_port = 1025;
-	}
+		int idx = 0;
+		for (; idx < NDPIP_MAX_LOCAL_PORT_RETRIES; idx++) {
+			sock->local.sin_port = NDPIP_MIN_UNPRIV_PORT + (random() % (UINT16_MAX - NDPIP_MIN_UNPRIV_PORT));
+			uint32_t hash = ndpip_socket_established_hash(&sock->local, &sock->remote);
 
-	for (size_t idx = 0; idx < NDPIP_TODO_MAX_FDS; idx++) {
-		if (socket_table[idx] == NULL)
-			continue;
+			if (ndpip_hashtable_get(htable, hash) == NULL)
+				break;
+		}
 
-		struct ndpip_socket *csock = socket_table[idx];
+		if (idx == NDPIP_MAX_LOCAL_PORT_RETRIES) {
+			errno = EADDRINUSE;
+			return -1;
+		}
+	} else {
+		uint32_t hash = ndpip_socket_established_hash(&sock->local, &sock->remote);
 
-		if (csock == sock)
-			continue;
-
-		if ((memcmp(&csock->local, &sock->local, sizeof(struct sockaddr_in)) == 0) &&
-				(memcmp(&csock->remote, &sock->remote, sizeof(struct sockaddr_in)) == 0) &&
-				(csock->protocol == sock->protocol)) {
-
-			if (find_local_port) {
-				sock->local.sin_port++;
-				idx = 0;
-			} else {
-				errno = EADDRINUSE;
-				return -1;
-			}
+		if (ndpip_hashtable_get(htable, hash) != NULL) {
+			errno = EADDRINUSE;
+			return -1;
 		}
 	}
 
