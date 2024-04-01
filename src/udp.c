@@ -106,6 +106,9 @@ void ndpip_udp_feed(struct ndpip_udp_socket *udp_sock, struct sockaddr_in *remot
 
 uint16_t ndpip_udp_max_xmit(struct ndpip_udp_socket *udp_sock, struct ndpip_pbuf **pb, uint16_t cnt)
 {
+	uint16_t burst_size = ndpip_iface_get_burst_size(udp_sock->socket.iface);
+	cnt = cnt < burst_size ? cnt : burst_size;
+
 #ifdef NDPIP_GRANTS_ENABLE
 	if (sock->grants_overhead < 0)
 		return 0;
@@ -115,7 +118,7 @@ uint16_t ndpip_udp_max_xmit(struct ndpip_udp_socket *udp_sock, struct ndpip_pbuf
 	int64_t grants_left = sock->grants;
 
 	for (uint16_t idx = 0; idx < cnt; idx++) {
-		grants_left -= sock->grants_overhead + sizeof(struct ethhdr) + sizeof(struct iphdr) + sizeof(struct udphdr) + ndpip_pbuf_length(pb[idx]);
+		grants_left -= sock->grants_overhead + sizeof(struct ethhdr) + sizeof(struct iphdr) + sizeof(struct udphdr) + ndpip_pbuf_metadata(pb[idx])->data_len;
 
 		if (grants_left < 0)
 			return idx;
@@ -123,6 +126,26 @@ uint16_t ndpip_udp_max_xmit(struct ndpip_udp_socket *udp_sock, struct ndpip_pbuf
 #endif
 
 	return cnt;
+}
+
+void ndpip_udp_prepare_send(struct ndpip_udp_socket *udp_sock, struct ndpip_pbuf *pb)
+{
+	uint16_t data_len = ndpip_pbuf_length(pb);
+
+	assert(ndpip_pbuf_offset(pb, sizeof(udp_sock->xmit_template)) >= 0);
+	memcpy(ndpip_pbuf_data(pb), udp_sock->xmit_template, sizeof(udp_sock->xmit_template));
+
+	struct ethhdr *eth = ndpip_pbuf_data(pb);
+	struct iphdr *iph = (void *) (eth + 1);
+	struct udphdr *uh = (void *) (iph + 1);
+
+	uint16_t tot_len = sizeof(struct iphdr) + sizeof(struct udphdr) + data_len;
+	iph->tot_len = htons(tot_len);
+	uh->uh_ulen = htons(sizeof(struct udphdr) + data_len);
+
+#ifndef NDPIP_DEBUG_NO_CKSUM
+	ndpip_udp_prepare_pbuf(udp_sock, pb, iph, uh);
+#endif
 }
 
 int ndpip_udp_send(struct ndpip_udp_socket *udp_sock, struct ndpip_pbuf **pb, uint16_t cnt)
@@ -136,28 +159,10 @@ int ndpip_udp_send(struct ndpip_udp_socket *udp_sock, struct ndpip_pbuf **pb, ui
 	if (cnt == 0)
 		return 0;
 
-	for (uint16_t idx = 0; idx < cnt; idx++) {
-		uint16_t data_len = ndpip_pbuf_length(pb[idx]);
-
-		assert(ndpip_pbuf_offset(pb[idx], sizeof(udp_sock->xmit_template)) >= 0);
-		memcpy(ndpip_pbuf_data(pb[idx]), udp_sock->xmit_template, sizeof(udp_sock->xmit_template));
-
-		struct ethhdr *eth = ndpip_pbuf_data(pb[idx]);
-		struct iphdr *iph = (void *) (eth + 1);
-		struct udphdr *uh = (void *) (iph + 1);
-
-		uint16_t tot_len = sizeof(struct iphdr) + sizeof(struct udphdr) + data_len;
-		iph->tot_len = htons(tot_len);
-		uh->uh_ulen = htons(sizeof(struct udphdr) + data_len);
-
 #ifdef NDPIP_GRANTS_ENABLE
+	for (uint16_t idx = 0; idx < cnt; idx++)
 		sock->grants -= sock->grants_overhead + ndpip_pbuf_length(pb[idx]);
 #endif
-
-#ifndef NDPIP_DEBUG_NO_CKSUM
-		ndpip_udp_prepare_pbuf(udp_sock, pb[idx], iph, uh);
-#endif
-	}
 
 	ndpip_iface_xmit(sock->iface, pb, cnt, true);
 

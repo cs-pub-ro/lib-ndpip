@@ -75,6 +75,7 @@ struct ndpip_tcp_socket {
 int ndpip_tcp_feed(struct ndpip_tcp_socket *tcp_sock, struct sockaddr_in *remote, struct ndpip_pbuf *pb, struct tcphdr *th, uint16_t th_hlen, uint16_t data_len);
 int ndpip_tcp_flush(struct ndpip_tcp_socket *tcp_sock, struct ndpip_pbuf *rpb);
 void ndpip_tcp_free_acked(struct ndpip_tcp_socket *tcp_sock);
+void ndpip_tcp_prepare_send(struct ndpip_tcp_socket *tcp_sock, struct ndpip_pbuf *pb);
 int ndpip_tcp_send(struct ndpip_tcp_socket *tcp_sock, struct ndpip_pbuf **pb, uint16_t cnt);
 void ndpip_tcp_rto_handler(void *argp);
 int ndpip_tcp_connect(struct ndpip_tcp_socket *tcp_sock);

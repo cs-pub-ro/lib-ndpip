@@ -563,7 +563,34 @@ size_t ndpip_sock_alloc(struct ndpip_socket *sock, struct ndpip_pbuf **pb, size_
 		return 0;
 	}
 
+	if (!rx) {
+	}
+
 	return len;
+}
+
+int ndpip_prepare(int sockfd, struct ndpip_pbuf *pb, uint16_t mss)
+{
+	if (sockfd < 0) {
+		errno = EBADF;
+		return -1;
+	}
+
+	struct ndpip_socket *sock = ndpip_socket_get(sockfd);
+	if (sock == NULL) {
+		errno = ENOTSOCK;
+		return -1;
+	}
+
+	ndpip_pbuf_resize(pb, mss);
+
+	if (sock->protocol == IPPROTO_TCP)
+		ndpip_tcp_prepare_send((struct ndpip_tcp_socket *) sock, pb);
+
+	if (sock->protocol == IPPROTO_UDP)
+		ndpip_udp_prepare_send((struct ndpip_udp_socket *) sock, pb);
+
+	return 0;
 }
 
 int ndpip_setsockopt(int sockfd, int level, int optname, const void *optval, socklen_t optlen)

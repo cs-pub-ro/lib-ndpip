@@ -8,6 +8,7 @@
 
 struct ndpip_pbuf_meta {
 	uint32_t tcp_ack;
+	uint16_t data_len;
 };
 
 enum ndpip_pbuf_flag {
