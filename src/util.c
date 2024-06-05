@@ -223,6 +223,7 @@ struct ndpip_hashtable *ndpip_hashtable_alloc(uint64_t buckets)
 	ret->hashtable_buckets = malloc(sizeof(struct ndpip_list_head) * buckets);
 	ret->hashtable_mask = buckets - 1;
 	ret->hashtable_length = buckets;
+	ret->last_node = NULL;
 
 	for (size_t idx = 0; idx < ret->hashtable_length; idx++)
 		ret->hashtable_buckets[idx].prev = ret->hashtable_buckets[idx].next = &ret->hashtable_buckets[idx];
@@ -232,11 +233,20 @@ struct ndpip_hashtable *ndpip_hashtable_alloc(uint64_t buckets)
 
 void *ndpip_hashtable_get(struct ndpip_hashtable *hashtable, uint32_t hash)
 {
+	ndpip_mutex_lock(&hashtable->lock);
+
+	if (hashtable->last_node != NULL) {
+		if (hashtable->last_node->hnode_hash == hash) {
+			ndpip_mutex_unlock(&hashtable->lock);
+			return hashtable->last_node->hnode_data;
+		}
+	}
+
 	struct ndpip_list_head *bucket = (void *) &hashtable->hashtable_buckets[hash & hashtable->hashtable_mask];
 
-	ndpip_mutex_lock(&hashtable->lock);
 	ndpip_list_foreach(struct ndpip_hlist_node, hnode, bucket) {
 		if (hnode->hnode_hash == hash) {
+			hashtable->last_node = hnode;
 			ndpip_mutex_unlock(&hashtable->lock);
 			return hnode->hnode_data;
 		}

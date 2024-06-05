@@ -70,6 +70,7 @@ struct ndpip_hashtable {
 	uint64_t hashtable_length;
 	uint32_t hashtable_mask;
 	struct ndpip_mutex lock;
+	struct ndpip_hlist_node *last_node;
 };
 
 struct eqds_cn {
