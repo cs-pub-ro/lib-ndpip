@@ -1,5 +1,5 @@
-AR = gcc-ar
 CC ?= gcc
+AR ?= ar
 PKGCONF ?= pkg-config
 PREFIX ?=
 
