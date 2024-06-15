@@ -838,13 +838,15 @@ int ndpip_tcp_feed(struct ndpip_tcp_socket *tcp_sock, struct sockaddr_in *remote
 		if (th_flags != TH_ACK)
 			goto err;
 
-		if (data_len != 0)
-			goto err;
-
 		tcp_sock->state = CONNECTED;
 		ndpip_mutex_lock(&tcp_sock->parent_socket->accept_queue_lock);
 		ndpip_list_add(&tcp_sock->parent_socket->accept_queue, &tcp_sock->accept_queue);
 		ndpip_mutex_unlock(&tcp_sock->parent_socket->accept_queue_lock);
+
+		if (data_len != 0) {
+			sock->recv_tmp[sock->recv_tmp_len++] = pb;
+			return 1;
+		}
 
 		return 0;
 	}
