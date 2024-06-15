@@ -730,7 +730,8 @@ int ndpip_tcp_feed(struct ndpip_tcp_socket *tcp_sock, struct sockaddr_in *remote
 					printf("ndpip_tcp_feed: Retransmission: local_port=%hu; remote_port=%hu; seq=%u; expected_seq=%u;\n",
 						tcp_sock->socket.local.sin_port, tcp_sock->socket.remote.sin_port, tcp_seq, tcp_sock->tcp_ack);
 
-					tcp_sock->tcp_rsp_ack = true;
+					if (tcp_sock->state != ACCEPTING)
+						tcp_sock->tcp_rsp_ack = true;
 				} else
 					printf("ndpip_tcp_feed: Unseen segment: local_port=%hu; remote_port=%hu; seq=%u; expected_seq=%u;\n",
 						tcp_sock->socket.local.sin_port, tcp_sock->socket.remote.sin_port, tcp_seq, tcp_sock->tcp_ack);
@@ -827,9 +828,7 @@ int ndpip_tcp_feed(struct ndpip_tcp_socket *tcp_sock, struct sockaddr_in *remote
 		if (ndpip_sock_alloc((struct ndpip_socket *) tcp_sock, &rpb, 1, true) == 0)
 			goto err;
 
-		ndpip_tcp_build_meta(tcp_sock, TH_ACK, rpb);
-		ndpip_tcp_send_one(tcp_sock, rpb);
-
+		tcp_sock->tcp_rsp_ack = true;
 		tcp_sock->state = CONNECTED;
 
 		return 0;
