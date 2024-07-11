@@ -1,5 +1,6 @@
 #include "ndpip/util.h"
 #include "ndpip/tcp.h"
+#include "ndpip/workhorse.h"
 
 #include <assert.h>
 #include <string.h>
@@ -322,6 +323,7 @@ static void ndpip_tcp_close_established(struct ndpip_tcp_socket *tcp_sock)
 
 	uint32_t hash = ndpip_socket_established_hash(&sock->local, &sock->remote);
 	ndpip_hashtable_del(ndpip_tcp_established_sockets, hash);
+	ndpip_timers_del(tcp_sock->timer_rto);
 }
 
 static void ndpip_tcp_close_listening(struct ndpip_tcp_socket *tcp_sock)

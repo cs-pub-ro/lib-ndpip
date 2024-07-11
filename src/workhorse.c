@@ -339,6 +339,7 @@ free_pkt:
 
 static struct ndpip_list_head ndpip_timers_list;
 static struct ndpip_mutex ndpip_timers_list_lock;
+static struct ndpip_timer *ndpip_last_timer = (void *) &ndpip_timers_list;
 
 void ndpip_workhorse_init()
 {
@@ -350,6 +351,15 @@ void ndpip_timers_add(struct ndpip_timer *timer)
 {
 	ndpip_mutex_lock(&ndpip_timers_list_lock);
 	ndpip_list_add(&ndpip_timers_list, (void *) timer);
+	ndpip_last_timer = (void *) &ndpip_timers_list;
+	ndpip_mutex_unlock(&ndpip_timers_list_lock);
+}
+
+void ndpip_timers_del(struct ndpip_timer *timer)
+{
+	ndpip_mutex_lock(&ndpip_timers_list_lock);
+	ndpip_list_del((void *) timer);
+	ndpip_last_timer = (void *) &ndpip_timers_list;
 	ndpip_mutex_unlock(&ndpip_timers_list_lock);
 }
 
@@ -361,15 +371,17 @@ static void ndpip_timers_hook(struct ndpip_iface *iface)
 
 	timer_s = 0;
 
-	static struct ndpip_timer *timer_t = (void *) &ndpip_timers_list;
-
 	ndpip_mutex_lock(&ndpip_timers_list_lock);
 
-	timer_t = (void *) timer_t->list.next;
-	if (ndpip_timer_armed(timer_t) && ndpip_timer_expired(timer_t)) {
-		ndpip_timer_disarm(timer_t);
-		timer_t->func(timer_t->argp);
+	ndpip_last_timer = (void *) ndpip_last_timer->list.next;
+	if (((void *) ndpip_last_timer) == &ndpip_timers_list)
+		goto ret;
+
+	if (ndpip_timer_armed(ndpip_last_timer) && ndpip_timer_expired(ndpip_last_timer)) {
+		ndpip_timer_disarm(ndpip_last_timer);
+		ndpip_last_timer->func(ndpip_last_timer->argp);
 	}
 
+ret:
 	ndpip_mutex_unlock(&ndpip_timers_list_lock);
 }
