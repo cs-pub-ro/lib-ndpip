@@ -177,18 +177,20 @@ int ndpip_linux_dpdk_iface_xmit(struct ndpip_iface *iface, struct ndpip_pbuf **p
 	rte_eth_tx_prepare(iface_linux_dpdk->iface_netdev_id, iface_linux_dpdk->iface_tx_queue_id, mbs, cnt);
 	uint16_t max_burst = ndpip_iface_get_burst_size(iface);
 
-	ndpip_mutex_lock(&iface_linux_dpdk->iface_tx_lock);
 	for (uint16_t idx = 0; idx < cnt;) {
 		uint16_t cnt2 = cnt - idx;
 		cnt2 = max_burst < cnt2 ? max_burst : cnt2;
+
+		ndpip_mutex_lock(&iface_linux_dpdk->iface_tx_lock);
 
 		idx += rte_eth_tx_burst(
 			iface_linux_dpdk->iface_netdev_id,
 			iface_linux_dpdk->iface_tx_queue_id,
 			mbs + idx, cnt2);
+
+		ndpip_mutex_unlock(&iface_linux_dpdk->iface_tx_lock);
 	}
 
-	ndpip_mutex_unlock(&iface_linux_dpdk->iface_tx_lock);
 
 	return 0;
 }
