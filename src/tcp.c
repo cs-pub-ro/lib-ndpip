@@ -729,14 +729,15 @@ int ndpip_tcp_feed(struct ndpip_tcp_socket *tcp_sock, struct sockaddr_in *remote
 			// Out of order or unseen segment
 			if (tcp_seq != tcp_sock->tcp_ack) {
 				if ((tcp_sock->tcp_ack - tcp_seq) < (1 << 30)) {
-					printf("ndpip_tcp_feed: Retransmission: local_port=%hu; remote_port=%hu; seq=%u; expected_seq=%u;\n",
-						tcp_sock->socket.local.sin_port, tcp_sock->socket.remote.sin_port, tcp_seq, tcp_sock->tcp_ack);
+					printf("ndpip_tcp_feed: Retransmission: ");
 
 					if (tcp_sock->state != ACCEPTING)
 						tcp_sock->tcp_rsp_ack = true;
 				} else
-					printf("ndpip_tcp_feed: Unseen segment: local_port=%hu; remote_port=%hu; seq=%u; expected_seq=%u;\n",
-						tcp_sock->socket.local.sin_port, tcp_sock->socket.remote.sin_port, tcp_seq, tcp_sock->tcp_ack);
+					printf("ndpip_tcp_feed: Unseen segment: ");
+
+				printf("local_port=%hu; remote_port=%hu; seq=%u; expected_seq=%u;\n",
+					ntohs(tcp_sock->socket.local.sin_port), ntohs(tcp_sock->socket.remote.sin_port), tcp_seq, tcp_sock->tcp_ack);
 
 				return 0;
 			}

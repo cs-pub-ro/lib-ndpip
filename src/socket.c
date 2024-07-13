@@ -322,7 +322,7 @@ int ndpip_connect(int sockfd, const struct sockaddr *addr, socklen_t addrlen)
 	if (sock->local.sin_port == 0) {
 		int idx = 0;
 		for (; idx < NDPIP_MAX_LOCAL_PORT_RETRIES; idx++) {
-			sock->local.sin_port = NDPIP_MIN_UNPRIV_PORT + (random() % (UINT16_MAX - NDPIP_MIN_UNPRIV_PORT));
+			sock->local.sin_port = htons(NDPIP_MIN_UNPRIV_PORT + (random() % (UINT16_MAX - NDPIP_MIN_UNPRIV_PORT + 1)));
 			uint32_t hash = ndpip_socket_established_hash(&sock->local, &sock->remote);
 
 			if (ndpip_hashtable_get(htable, hash) == NULL)
