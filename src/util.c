@@ -278,8 +278,10 @@ void ndpip_hashtable_del(struct ndpip_hashtable *hashtable, uint32_t hash)
 
 	ndpip_mutex_lock(&hashtable->lock);
 	ndpip_list_foreach(struct ndpip_hlist_node, hnode, bucket) {
-		if (hnode->hnode_hash == hash)
+		if (hnode->hnode_hash == hash) {
 			rmnode = hnode;
+			break;
+		}
 	}
 
 	if (rmnode != NULL) {
