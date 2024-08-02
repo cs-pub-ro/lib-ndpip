@@ -490,7 +490,7 @@ int ndpip_tcp_send(struct ndpip_tcp_socket *tcp_sock, struct ndpip_pbuf **pb, ui
 		th->th_ack = htonl(tcp_sock->tcp_ack);
 
 #ifndef NDPIP_DEBUG_NO_CKSUM
-		ndpip_tcp_prepare_pbuf(tcp_sock, pb, iph, th);
+		ndpip_tcp_prepare_pbuf(tcp_sock, pb[idx], iph, th);
 #endif
 
 #ifdef NDPIP_GRANTS_ENABLE
