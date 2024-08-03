@@ -160,7 +160,7 @@ int ndpip_rx_thread(void *argp)
 
 			struct iphdr *iph = (void *) (eth + 1);
 
-#ifndef NDPIP_DEBUG_NO_CKSUM
+#ifndef NDPIP_DEBUG_NO_RX_CKSUM
 			if (ndpip_iface_has_offload(iface, NDPIP_IFACE_OFFLOAD_RX_IPV4_CSUM)) {
 				if (ndpip_pbuf_has_flag(pb, NDPIP_PBUF_F_RX_IP_CSUM_BAD))
 					goto free_pkt;
@@ -189,17 +189,17 @@ int ndpip_rx_thread(void *argp)
 					goto free_pkt;
 
 				struct tcphdr *th = ((void *) iph) + iph_hlen;
-#ifndef NDPIP_DEBUG_NO_CKSUM
+#ifndef NDPIP_DEBUG_NO_RX_CKSUM
 				if (ndpip_iface_has_offload(iface, NDPIP_IFACE_OFFLOAD_RX_TCPV4_CSUM)) {
 					if (ndpip_pbuf_has_flag(pb, NDPIP_PBUF_F_RX_L4_CSUM_BAD))
 						goto free_pkt;
 
 					if (ndpip_pbuf_has_flag(pb, NDPIP_PBUF_F_RX_L4_CSUM_NONE)) {
-						if (!ndpip_ipv4_udptcp_cksum(iph, th))
+						if (ndpip_ipv4_udptcp_cksum(iph, th) != 0)
 							goto free_pkt;
 					}
 
-				} else if (ndpip_ipv4_udptcp_cksum(iph, th))
+				} else if (ndpip_ipv4_udptcp_cksum(iph, th) != 0)
 					goto free_pkt;
 #endif
 
@@ -242,16 +242,16 @@ int ndpip_rx_thread(void *argp)
 					goto free_pkt;
 
 				struct udphdr *uh = ((void *) iph) + iph_hlen;
-#ifndef NDPIP_DEBUG_NO_CKSUM
+#ifndef NDPIP_DEBUG_NO_RX_CKSUM
 				if (ndpip_iface_has_offload(iface, NDPIP_IFACE_OFFLOAD_RX_UDPV4_CSUM)) {
 					if (ndpip_pbuf_has_flag(pb, NDPIP_PBUF_F_RX_L4_CSUM_BAD))
 						goto free_pkt;
 
 					if (ndpip_pbuf_has_flag(pb, NDPIP_PBUF_F_RX_L4_CSUM_NONE))
-						if (!ndpip_ipv4_udptcp_cksum(iph, uh))
+						if (ndpip_ipv4_udptcp_cksum(iph, uh) != 0xffff)
 							goto free_pkt;
 
-				} else if (ndpip_ipv4_udptcp_cksum(iph, uh))
+				} else if (ndpip_ipv4_udptcp_cksum(iph, uh) != 0xffff)
 					goto free_pkt;
 #endif
 

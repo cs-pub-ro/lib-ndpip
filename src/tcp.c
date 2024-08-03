@@ -29,7 +29,7 @@ char *ndpip_log_grants_tcp_logtags[3] = {
 };
 #endif
 
-#ifndef NDPIP_DEBUG_NO_CKSUM
+#ifndef NDPIP_DEBUG_NO_TX_CKSUM
 static void ndpip_tcp_prepare_pbuf(struct ndpip_tcp_socket *tcp_sock, struct ndpip_pbuf *pb, struct iphdr *iph, struct tcphdr *th);
 #endif
 static int ndpip_tcp_fin(struct ndpip_tcp_socket *tcp_sock);
@@ -40,7 +40,7 @@ static int ndpip_tcp_build_xmit_template(struct ndpip_tcp_socket *tcp_sock);
 static int ndpip_tcp_build_meta(struct ndpip_tcp_socket *tcp_sock, uint8_t th_flags, struct ndpip_pbuf *pb);
 static void ndpip_tcp_parse_opts(struct ndpip_tcp_socket *sock, struct tcphdr *th, uint16_t th_hlen);
 
-#ifndef NDPIP_DEBUG_NO_CKSUM
+#ifndef NDPIP_DEBUG_NO_TX_CKSUM
 static void ndpip_tcp_prepare_pbuf(struct ndpip_tcp_socket *tcp_sock, struct ndpip_pbuf *pb, struct iphdr *iph, struct tcphdr *th)
 {
 	struct ndpip_socket *sock = &tcp_sock->socket;
@@ -246,7 +246,7 @@ static int ndpip_tcp_build_meta(struct ndpip_tcp_socket *tcp_sock, uint8_t th_fl
 	} else
 		th->th_off = sizeof(struct tcphdr) >> 2;
 
-#ifndef NDPIP_DEBUG_NO_CKSUM
+#ifndef NDPIP_DEBUG_NO_TX_CKSUM
 	ndpip_tcp_prepare_pbuf(tcp_sock, pb, iph, th);
 #endif
 	ndpip_pbuf_metadata(pb)->tcp_ack = tcp_seq + (th_flags == TH_ACK ? 0 : 1);
@@ -489,7 +489,7 @@ int ndpip_tcp_send(struct ndpip_tcp_socket *tcp_sock, struct ndpip_pbuf **pb, ui
 		th->th_seq = htonl(tcp_seq);
 		th->th_ack = htonl(tcp_sock->tcp_ack);
 
-#ifndef NDPIP_DEBUG_NO_CKSUM
+#ifndef NDPIP_DEBUG_NO_TX_CKSUM
 		ndpip_tcp_prepare_pbuf(tcp_sock, pb[idx], iph, th);
 #endif
 

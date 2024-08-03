@@ -12,7 +12,7 @@
 #include <sys/epoll.h>
 
 
-#ifndef NDPIP_DEBUG_NO_CKSUM
+#ifndef NDPIP_DEBUG_NO_TX_CKSUM
 static void ndpip_udp_prepare_pbuf(struct ndpip_udp_socket *tcp_sock, struct ndpip_pbuf *pb, struct iphdr *iph, struct udphdr *uh);
 #endif
 
@@ -143,7 +143,7 @@ void ndpip_udp_prepare_send(struct ndpip_udp_socket *udp_sock, struct ndpip_pbuf
 	iph->tot_len = htons(tot_len);
 	uh->uh_ulen = htons(sizeof(struct udphdr) + data_len);
 
-#ifndef NDPIP_DEBUG_NO_CKSUM
+#ifndef NDPIP_DEBUG_NO_TX_CKSUM
 	ndpip_udp_prepare_pbuf(udp_sock, pb, iph, uh);
 #endif
 }
@@ -171,7 +171,7 @@ int ndpip_udp_send(struct ndpip_udp_socket *udp_sock, struct ndpip_pbuf **pb, ui
 	return cnt;
 }
 
-#ifndef NDPIP_DEBUG_NO_CKSUM
+#ifndef NDPIP_DEBUG_NO_TX_CKSUM
 static void ndpip_udp_prepare_pbuf(struct ndpip_udp_socket *udp_sock, struct ndpip_pbuf *pb, struct iphdr *iph, struct udphdr *uh)
 {
 	struct ndpip_socket *sock = &udp_sock->socket;

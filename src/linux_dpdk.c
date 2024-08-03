@@ -90,26 +90,33 @@ int ndpip_linux_dpdk_register_iface(int netdev_id)
 		return -1;
 	}
 
-#ifndef NDPIP_DEBUG_NO_CKSUM
+#ifndef NDPIP_DEBUG_NO_TX_CKSUM
 #if RTE_VERSION < RTE_VERSION_NUM(21, 11, 0, 0)
         (&iface)->iface_conf.txmode.offloads = (&iface)->iface_dev_info.tx_offload_capa & (
 			DEV_TX_OFFLOAD_IPV4_CKSUM |
 			DEV_TX_OFFLOAD_TCP_CKSUM |
-			DEV_TX_OFFLOAD_UDP_CKSUM |
-			DEV_RX_OFFLOAD_IPV4_CKSUM |
-			DEV_RX_OFFLOAD_TCP_CKSUM |
-			DEV_RX_OFFLOAD_UDP_CKSUM);
+			DEV_TX_OFFLOAD_UDP_CKSUM);
 #else 
         (&iface)->iface_conf.txmode.offloads = (&iface)->iface_dev_info.tx_offload_capa & (
 			RTE_ETH_TX_OFFLOAD_IPV4_CKSUM |
 			RTE_ETH_TX_OFFLOAD_TCP_CKSUM |
-			RTE_ETH_TX_OFFLOAD_UDP_CKSUM |
+			RTE_ETH_TX_OFFLOAD_UDP_CKSUM);
+#endif
+#endif
+
+#ifndef NDPIP_DEBUG_NO_RX_CKSUM
+#if RTE_VERSION < RTE_VERSION_NUM(21, 11, 0, 0)
+        (&iface)->iface_conf.rxmode.offloads = (&iface)->iface_dev_info.rx_offload_capa & (
+			DEV_RX_OFFLOAD_IPV4_CKSUM |
+			DEV_RX_OFFLOAD_TCP_CKSUM |
+			DEV_RX_OFFLOAD_UDP_CKSUM);
+#else 
+        (&iface)->iface_conf.rxmode.offloads = (&iface)->iface_dev_info.rx_offload_capa & (
 			RTE_ETH_RX_OFFLOAD_IPV4_CKSUM |
 			RTE_ETH_RX_OFFLOAD_TCP_CKSUM |
 			RTE_ETH_RX_OFFLOAD_UDP_CKSUM);
 #endif
 #endif
-
 	if (rte_eth_dev_configure((&iface)->iface_netdev_id, 1, 1, &(&iface)->iface_conf) < 0) {
 		perror("rte_eth_dev_configure");
 		return -1;
