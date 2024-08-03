@@ -485,7 +485,7 @@ bool ndpip_linux_dpdk_pbuf_has_flag(struct ndpip_pbuf *pb, enum ndpip_pbuf_flag 
 
 void ndpip_linux_dpdk_pbuf_set_flag(struct ndpip_pbuf *pb, enum ndpip_pbuf_flag flag, bool val)
 {
-	uint64_t ol_flag;
+	uint64_t ol_flag = 0;
 
 	switch (flag) {
 #if RTE_VERSION < RTE_VERSION_NUM(21, 11, 0, 0)
@@ -495,6 +495,10 @@ void ndpip_linux_dpdk_pbuf_set_flag(struct ndpip_pbuf *pb, enum ndpip_pbuf_flag 
 
 		case NDPIP_PBUF_F_TX_TCP_CKSUM:
 			ol_flag = PKT_TX_TCP_CKSUM;
+			break;
+
+		case NDPIP_PBUF_F_TX_UDP_CKSUM:
+			ol_flag = PKT_TX_UDP_CKSUM;
 			break;
 
 		case NDPIP_PBUF_F_TX_IPV4:
@@ -507,6 +511,10 @@ void ndpip_linux_dpdk_pbuf_set_flag(struct ndpip_pbuf *pb, enum ndpip_pbuf_flag 
 
 		case NDPIP_PBUF_F_TX_TCP_CKSUM:
 			ol_flag = RTE_MBUF_F_TX_TCP_CKSUM;
+			break;
+
+		case NDPIP_PBUF_F_TX_UDP_CKSUM:
+			ol_flag = RTE_MBUF_F_TX_UDP_CKSUM;
 			break;
 
 		case NDPIP_PBUF_F_TX_IPV4:
