@@ -29,7 +29,7 @@ char *ndpip_log_grants_tcp_logtags[3] = {
 };
 #endif
 
-#ifndef NDPIP_DEBUG_NO_TX_CKSUM
+#if !(defined(NDPIP_DEBUG_NO_TX_L4_CKSUM) && defined(NDPIP_DEBUG_NO_TX_L3_CKSUM))
 static void ndpip_tcp_prepare_pbuf(struct ndpip_tcp_socket *tcp_sock, struct ndpip_pbuf *pb, struct iphdr *iph, struct tcphdr *th);
 #endif
 static int ndpip_tcp_fin(struct ndpip_tcp_socket *tcp_sock);
@@ -40,7 +40,7 @@ static int ndpip_tcp_build_xmit_template(struct ndpip_tcp_socket *tcp_sock);
 static int ndpip_tcp_build_meta(struct ndpip_tcp_socket *tcp_sock, uint8_t th_flags, struct ndpip_pbuf *pb);
 static void ndpip_tcp_parse_opts(struct ndpip_tcp_socket *sock, struct tcphdr *th, uint16_t th_hlen);
 
-#ifndef NDPIP_DEBUG_NO_TX_CKSUM
+#if !(defined(NDPIP_DEBUG_NO_TX_L4_CKSUM) && defined(NDPIP_DEBUG_NO_TX_L3_CKSUM))
 static void ndpip_tcp_prepare_pbuf(struct ndpip_tcp_socket *tcp_sock, struct ndpip_pbuf *pb, struct iphdr *iph, struct tcphdr *th)
 {
 	struct ndpip_socket *sock = &tcp_sock->socket;
@@ -50,17 +50,21 @@ static void ndpip_tcp_prepare_pbuf(struct ndpip_tcp_socket *tcp_sock, struct ndp
 
 	ndpip_pbuf_set_flag(pb, NDPIP_PBUF_F_TX_IPV4, true);
 
+#ifndef NDPIP_DEBUG_NO_TX_L3_CKSUM
 	if (ndpip_iface_has_offload(sock->iface, NDPIP_IFACE_OFFLOAD_TX_IPV4_CSUM))
 		ndpip_pbuf_set_flag(pb, NDPIP_PBUF_F_TX_IP_CKSUM, true);
 	else
 		iph->check = ndpip_ipv4_cksum(iph);
+#endif
 
+#ifndef NDPIP_DEBUG_NO_TX_L4_CKSUM
 	if (ndpip_iface_has_offload(sock->iface, NDPIP_IFACE_OFFLOAD_TX_TCPV4_CSUM))
 		ndpip_pbuf_set_flag(pb, NDPIP_PBUF_F_TX_TCP_CKSUM, true);
 	else {
 		th->th_sum = 0;
 		th->th_sum = ndpip_ipv4_udptcp_cksum(iph, th);
 	}
+#endif
 }
 #endif
 
@@ -246,7 +250,7 @@ static int ndpip_tcp_build_meta(struct ndpip_tcp_socket *tcp_sock, uint8_t th_fl
 	} else
 		th->th_off = sizeof(struct tcphdr) >> 2;
 
-#ifndef NDPIP_DEBUG_NO_TX_CKSUM
+#if !(defined(NDPIP_DEBUG_NO_TX_L4_CKSUM) && defined(NDPIP_DEBUG_NO_TX_L3_CKSUM))
 	ndpip_tcp_prepare_pbuf(tcp_sock, pb, iph, th);
 #endif
 	ndpip_pbuf_metadata(pb)->tcp_ack = tcp_seq + (th_flags == TH_ACK ? 0 : 1);
