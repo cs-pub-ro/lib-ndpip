@@ -262,29 +262,47 @@ void ndpip_tcp_rto_handler(void *argp) {
 	struct ndpip_tcp_socket *tcp_sock = argp;
 	struct ndpip_socket *sock = &tcp_sock->socket;
 
-	struct ndpip_pbuf *pb;
-	size_t cnt = 1;
-
 	ndpip_tcp_free_acked(tcp_sock);
-	if (ndpip_ring_peek(sock->xmit_ring, &cnt, &pb) < 0)
+
+	size_t cnt = ndpip_ring_size(sock->xmit_ring);
+	if (cnt == 0)
 		goto ret_no_rto;
 
-	//printf("rto2: xmit_ring_size=%lu;\n", ndpip_ring_size(sock->xmit_ring));
+	struct ndpip_pbuf **pbs = malloc(cnt * sizeof(struct ndpip_pbuf *));
+	int r = ndpip_ring_peek(sock->xmit_ring, &cnt, pbs);
+	if ((r < 0) || (cnt == 0))
+		return;
+
 	tcp_sock->tcp_rto = true;
+	uint32_t tcp_max_seq = tcp_sock->tcp_max_seq;
+
+	size_t cnt2;
+	for (cnt2 = 0; cnt2 < cnt; cnt2++) {
+		struct ndpip_pbuf *pb = pbs[cnt2];
+		if ((tcp_max_seq - ndpip_pbuf_metadata(pb)->tcp_ack) > (1 << 31))
+			break;
 
 #ifdef NDPIP_GRANTS_ENABLE
-	uint16_t pbuf_len = ndpip_pbuf_length(pb);
-	sock->grants -= pbuf_len + sock->grants_overhead;
+		uint32_t pbuf_len = ndpip_pbuf_length(pb);
+		sock->grants -= pbuf_len + sock->grants_overhead;
 
-	if (ndpip_log_grants) {
-		ndpip_log_grants_tcp[ndpip_log_grants_tcp_idx][0] = sock->grants;
-		ndpip_log_grants_tcp[ndpip_log_grants_tcp_idx][1] = pbuf_len + sock->grants_overhead;
-		ndpip_log_grants_tcp[ndpip_log_grants_tcp_idx][2] = 0;
+		if (ndpip_log_grants) {
+			ndpip_log_grants_tcp[ndpip_log_grants_tcp_idx][0] = sock->grants;
+			ndpip_log_grants_tcp[ndpip_log_grants_tcp_idx][1] = pbuf_len + sock->grants_overhead;
+			ndpip_log_grants_tcp[ndpip_log_grants_tcp_idx][2] = 0;
 
-		ndpip_log_grants_tcp_idx++;
-	}
+			ndpip_log_grants_tcp_idx++;
+		}
 #endif
-	ndpip_iface_xmit(sock->iface, &pb, 1, false);
+	}
+
+	if (cnt2 == 0)
+		return;
+
+	ndpip_iface_xmit(sock->iface, pbs, cnt2, false);
+
+	//printf("rto2: xmit_ring_size=%lu;\n", ndpip_ring_size(sock->xmit_ring));
+
 	//ndpip_iface_xmit(sock->iface, &pb, 1, true);
 
 	if (!ndpip_timer_armed(tcp_sock->timer_rto))
@@ -733,15 +751,15 @@ int ndpip_tcp_feed(struct ndpip_tcp_socket *tcp_sock, struct sockaddr_in *remote
 			// Out of order or unseen segment
 			if (tcp_seq != tcp_sock->tcp_ack) {
 				if ((tcp_sock->tcp_ack - tcp_seq) < (1 << 30)) {
-					printf("ndpip_tcp_feed: Retransmission: ");
+					//printf("ndpip_tcp_feed: Retransmission: ");
 
 					if (tcp_sock->state != ACCEPTING)
 						tcp_sock->tcp_rsp_ack = true;
-				} else
+				}/* else
 					printf("ndpip_tcp_feed: Unseen segment: ");
-
 				printf("local_port=%hu; remote_port=%hu; seq=%u; expected_seq=%u;\n",
 					ntohs(tcp_sock->socket.local.sin_port), ntohs(tcp_sock->socket.remote.sin_port), tcp_seq, tcp_sock->tcp_ack);
+				*/
 
 				return 0;
 			}
