@@ -136,6 +136,7 @@ int ndpip_tcp_connect(struct ndpip_tcp_socket *tcp_sock)
 	}
 
 	tcp_sock->tcp_seq++;
+	tcp_sock->tcp_max_seq++;
 
 	uint32_t hash = ndpip_socket_established_hash(&sock->local, &sock->remote);
 	ndpip_hashtable_put(ndpip_tcp_established_sockets, hash, sock);
@@ -836,6 +837,7 @@ int ndpip_tcp_feed(struct ndpip_tcp_socket *tcp_sock, struct sockaddr_in *remote
 
 		ndpip_tcp_build_meta(tcp_asock, TH_SYN | TH_ACK, rpb);
 		tcp_asock->tcp_seq++;
+		tcp_asock->tcp_max_seq++;
 		ndpip_tcp_send_one(tcp_asock, rpb);
 
 		return 0;
