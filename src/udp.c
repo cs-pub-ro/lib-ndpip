@@ -12,7 +12,7 @@
 #include <sys/epoll.h>
 
 
-#if !(defined(NDPIP_DEBUG_NO_TX_L3_CKSUM) && defined(NDPIP_DEBUG_NO_TX_L4_SUM))
+#ifndef NDPIP_DEBUG_NO_TX_HW_CKSUM
 static void ndpip_udp_prepare_pbuf(struct ndpip_udp_socket *tcp_sock, struct ndpip_pbuf *pb, struct iphdr *iph, struct udphdr *uh);
 #endif
 
@@ -143,7 +143,7 @@ void ndpip_udp_prepare_send(struct ndpip_udp_socket *udp_sock, struct ndpip_pbuf
 	iph->tot_len = htons(tot_len);
 	uh->uh_ulen = htons(sizeof(struct udphdr) + data_len);
 
-#if !(defined(NDPIP_DEBUG_NO_TX_L3_CKSUM) && defined(NDPIP_DEBUG_NO_TX_L4_SUM))
+#ifndef NDPIP_DEBUG_NO_TX_HW_CKSUM
 	ndpip_udp_prepare_pbuf(udp_sock, pb, iph, uh);
 #endif
 }
@@ -171,7 +171,7 @@ int ndpip_udp_send(struct ndpip_udp_socket *udp_sock, struct ndpip_pbuf **pb, ui
 	return cnt;
 }
 
-#if !(defined(NDPIP_DEBUG_NO_TX_L3_CKSUM) && defined(NDPIP_DEBUG_NO_TX_L4_SUM))
+#ifndef NDPIP_DEBUG_NO_TX_HW_CKSUM
 static void ndpip_udp_prepare_pbuf(struct ndpip_udp_socket *udp_sock, struct ndpip_pbuf *pb, struct iphdr *iph, struct udphdr *uh)
 {
 	struct ndpip_socket *sock = &udp_sock->socket;
@@ -181,20 +181,20 @@ static void ndpip_udp_prepare_pbuf(struct ndpip_udp_socket *udp_sock, struct ndp
 
 	ndpip_pbuf_set_flag(pb, NDPIP_PBUF_F_TX_IPV4, true);
 
-#ifndef NDPIP_DEBUG_NO_TX_L3_CKSUM
 	if (ndpip_iface_has_offload(sock->iface, NDPIP_IFACE_OFFLOAD_TX_IPV4_CSUM))
 		ndpip_pbuf_set_flag(pb, NDPIP_PBUF_F_TX_IP_CKSUM, true);
+	/*
 	else
 		iph->check = ndpip_ipv4_cksum(iph);
-#endif
+	*/
 
-#ifndef NDPIP_DEBUG_NO_TX_L4_CKSUM
 	if (ndpip_iface_has_offload(sock->iface, NDPIP_IFACE_OFFLOAD_TX_UDPV4_CSUM))
 		ndpip_pbuf_set_flag(pb, NDPIP_PBUF_F_TX_UDP_CKSUM, true);
+	/*
 	else {
 		uh->uh_sum = 0;
 		uh->uh_sum = ndpip_ipv4_udptcp_cksum(iph, uh);
 	}
-#endif
+	*/
 }
 #endif
