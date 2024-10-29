@@ -75,16 +75,13 @@ struct ndpip_tcp_socket *ndpip_tcp_accept(struct ndpip_tcp_socket *tcp_sock)
 		return NULL;
 	}
 
-	ndpip_mutex_lock(&tcp_sock->accept_queue_lock);
 	if (tcp_sock->accept_queue.next == &tcp_sock->accept_queue) {
-		ndpip_mutex_unlock(&tcp_sock->accept_queue_lock);
 		errno = EAGAIN;
 		return NULL;
 	}
 
 	struct ndpip_tcp_socket *asock = ((void *) tcp_sock->accept_queue.next) - offsetof(struct ndpip_tcp_socket, accept_queue);
 	ndpip_list_del(tcp_sock->accept_queue.next);
-	ndpip_mutex_unlock(&tcp_sock->accept_queue_lock);
 
 	return asock;
 }
@@ -723,6 +720,7 @@ int ndpip_tcp_flush(struct ndpip_tcp_socket *tcp_sock, struct ndpip_pbuf *rpb)
 	ndpip_tcp_free_acked(tcp_sock);
 	assert(ndpip_ring_push(tcp_sock->socket.recv_ring, tcp_sock->socket.recv_tmp, tcp_sock->socket.recv_tmp_len) >= 0);
 	tcp_sock->socket.recv_tmp_len = 0;
+	tcp_sock->socket.feed_tmp_len = 0;
 
 	if (tcp_sock->tcp_rsp_ack) {
 		ndpip_tcp_build_meta(tcp_sock, TH_ACK, rpb);
@@ -754,7 +752,7 @@ int ndpip_tcp_feed(struct ndpip_tcp_socket *tcp_sock, struct sockaddr_in *remote
 				if ((tcp_sock->tcp_ack - tcp_seq) < (1 << 30)) {
 					//printf("ndpip_tcp_feed: Retransmission: ");
 
-					if (tcp_sock->state != ACCEPTING)
+					if (tcp_state != ACCEPTING)
 						tcp_sock->tcp_rsp_ack = true;
 				}/* else
 					printf("ndpip_tcp_feed: Unseen segment: ");
@@ -810,7 +808,11 @@ int ndpip_tcp_feed(struct ndpip_tcp_socket *tcp_sock, struct sockaddr_in *remote
 		asock->remote = *remote;
 		asock->iface = ndpip_iface_get_by_inaddr(asock->local.sin_addr);
 		asock->tx_mss = sock->tx_mss;
+
+		asock->feed_tmp = malloc(sizeof(struct ndpip_pbuf *) * ndpip_iface_get_burst_size(asock->iface));
 		asock->recv_tmp = malloc(sizeof(struct ndpip_pbuf *) * ndpip_iface_get_burst_size(asock->iface));
+
+		asock->feed_tmp_len = 0;
 		asock->recv_tmp_len = 0;
 
 		tcp_asock->tcp_recv_win_scale = tcp_sock->tcp_recv_win_scale;
@@ -866,9 +868,7 @@ int ndpip_tcp_feed(struct ndpip_tcp_socket *tcp_sock, struct sockaddr_in *remote
 			goto err;
 
 		tcp_sock->state = CONNECTED;
-		ndpip_mutex_lock(&tcp_sock->parent_socket->accept_queue_lock);
 		ndpip_list_add(&tcp_sock->parent_socket->accept_queue, &tcp_sock->accept_queue);
-		ndpip_mutex_unlock(&tcp_sock->parent_socket->accept_queue_lock);
 
 		if (data_len != 0) {
 			sock->recv_tmp[sock->recv_tmp_len++] = pb;

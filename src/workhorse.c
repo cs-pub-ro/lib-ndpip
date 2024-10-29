@@ -94,12 +94,11 @@ int ndpip_rx_thread(void *argp)
 		iter2++;
 
 		struct ndpip_tcp_socket *tcp_sockets[pkt_cnt];
+		struct ndpip_udp_socket *udp_sockets[pkt_cnt];
 		if ((r < 0) || (pkt_cnt == 0))
 			continue;
 
 		uint16_t tcp_sockets_len = 0;
-
-		struct ndpip_udp_socket *udp_sockets[pkt_cnt];
 		uint16_t udp_sockets_len = 0;
 
 		uint16_t replies_len = 0;
@@ -215,7 +214,8 @@ int ndpip_rx_thread(void *argp)
 					.sin_port = th->th_sport
 				};
 
-				struct ndpip_tcp_socket *tcp_sock = (struct ndpip_tcp_socket *) ndpip_socket_get_by_peer(&local, &remote, IPPROTO_TCP);
+				struct ndpip_socket *sock = ndpip_socket_get_by_peer(&local, &remote, IPPROTO_TCP);
+				struct ndpip_tcp_socket *tcp_sock = (struct ndpip_tcp_socket *) sock;
 				if (tcp_sock == NULL)
 					goto free_pkt;
 
@@ -228,13 +228,20 @@ int ndpip_rx_thread(void *argp)
 				if (ndpip_pbuf_resize(pb, data_len) < 0)
 					goto free_pkt;
 
-				if (!tcp_sock->socket.rx_loop_seen) {
+				if (!sock->rx_loop_seen) {
 					tcp_sockets[tcp_sockets_len++] = tcp_sock;
-					tcp_sock->socket.rx_loop_seen = true;
+					sock->rx_loop_seen = true;
 				}
 
-				if (ndpip_tcp_feed(tcp_sock, &remote, pb, th, th_hlen, data_len) == 1)
-					continue;
+				struct ndpip_pbuf_meta *pm = ndpip_pbuf_metadata(pb);
+				pm->remote = remote;
+				pm->data_len = data_len;
+				pm->th = th;
+				pm->th_hlen = th_hlen;
+
+				sock->feed_tmp[sock->feed_tmp_len++] = pb;
+
+				continue;
 			}
 
 			if (protocol == IPPROTO_UDP) {
@@ -267,7 +274,8 @@ int ndpip_rx_thread(void *argp)
 					.sin_port = uh->uh_sport
 				};
 
-				struct ndpip_udp_socket *udp_sock = (struct ndpip_udp_socket *) ndpip_socket_get_by_peer(&local, &remote, IPPROTO_UDP);
+				struct ndpip_socket *sock = ndpip_socket_get_by_peer(&local, &remote, IPPROTO_UDP);
+				struct ndpip_udp_socket *udp_sock = (struct ndpip_udp_socket *) sock;
 				if (udp_sock == NULL)
 					goto free_pkt;
 
@@ -277,12 +285,15 @@ int ndpip_rx_thread(void *argp)
 				if (ndpip_pbuf_resize(pb, ntohs(uh->len) - sizeof(struct udphdr)) < 0)
 					goto free_pkt;
 
-				if (!udp_sock->socket.rx_loop_seen) {
+				if (!sock->rx_loop_seen) {
 					udp_sockets[udp_sockets_len++] = udp_sock;
-					udp_sock->socket.rx_loop_seen = true;
+					sock->rx_loop_seen = true;
 				}
 
-				ndpip_udp_feed(udp_sock, &remote, pb);
+				struct ndpip_pbuf_meta *pm = ndpip_pbuf_metadata(pb);
+				pm->remote = remote;
+
+				sock->feed_tmp[sock->feed_tmp_len++] = pb;
 
 				continue;
 			}
@@ -291,20 +302,33 @@ free_pkt:
 			freed_pkts[freed_pkt_cnt++] = pb;
 		}
 
-		ndpip_pbuf_pool_release(rx_pool, freed_pkts, freed_pkt_cnt);
-
 		size_t tmp_pkt_cnt = tcp_sockets_len;
 		assert(ndpip_pbuf_pool_request(rx_pool, replies, &tmp_pkt_cnt) >= 0);
 		assert(tmp_pkt_cnt == tcp_sockets_len);
 
 		for (uint16_t idx = 0; idx < tcp_sockets_len; idx++) {
 			struct ndpip_tcp_socket *tcp_sock = tcp_sockets[idx];
+			struct ndpip_socket *sock = (struct ndpip_socket *) tcp_sock;
+
+			ndpip_mutex_lock(&sock->lock);
+			uint16_t sock_feed_tmp_len = sock->feed_tmp_len;
+			struct ndpip_pbuf **sock_feed_tmp = sock->feed_tmp;
+
+			for (uint16_t idx = 0; idx < sock_feed_tmp_len; idx++) {
+				struct ndpip_pbuf *pb = sock_feed_tmp[idx];
+				struct ndpip_pbuf_meta *pm = ndpip_pbuf_metadata(pb);
+
+				if (ndpip_tcp_feed(tcp_sock, &pm->remote, pb, pm->th, pm->th_hlen, pm->data_len) != 1)
+					freed_pkts[freed_pkt_cnt++] = pb;
+			}
 
 			int r = ndpip_tcp_flush(tcp_sock, replies[replies_len]);
+			ndpip_mutex_unlock(&sock->lock);
+
 			if (r == 1) {
 				replies_len++;
 #ifdef NDPIP_GRANTS_ENABLE
-				tcp_sock->socket.grants -= ndpip_pbuf_length(reply) + tcp_sock->socket.grants_overhead;
+				sock->grants -= ndpip_pbuf_length(reply) + sock->grants_overhead;
 				/*
 				if (ndpip_log_grants) {
 					ndpip_log_grants_idx++;
@@ -316,18 +340,35 @@ free_pkt:
 #endif
 			}
 
-			tcp_sock->socket.rx_loop_seen = false;
+			sock->rx_loop_seen = false;
 		}
 
 		if (replies_len > 0)
 			ndpip_iface_xmit(iface, replies, replies_len, true);
 
+		ndpip_pbuf_pool_release(rx_pool, freed_pkts, freed_pkt_cnt);
 		ndpip_pbuf_pool_release(rx_pool, replies + replies_len, tcp_sockets_len - replies_len);
 
 		for (uint16_t idx = 0; idx < udp_sockets_len; idx++) {
 			struct ndpip_udp_socket *udp_sock = udp_sockets[idx];
+			struct ndpip_socket *sock = (struct ndpip_socket *) udp_sock;
+
+			ndpip_mutex_lock(&sock->lock);
+
+			uint16_t sock_feed_tmp_len = sock->feed_tmp_len;
+			struct ndpip_pbuf **sock_feed_tmp = sock->feed_tmp;
+
+			for (uint16_t idx = 0; idx < sock_feed_tmp_len; idx++) {
+				struct ndpip_pbuf *pb = sock_feed_tmp[idx];
+				struct ndpip_pbuf_meta *pm = ndpip_pbuf_metadata(pb);
+
+				ndpip_udp_feed(udp_sock, &pm->remote, pb);
+			}
+
 			ndpip_udp_flush(udp_sock);
-			udp_sock->socket.rx_loop_seen = false;
+			ndpip_mutex_unlock(&sock->lock);
+
+			sock->rx_loop_seen = false;
 		}
 
 		replies_len_a += replies_len;

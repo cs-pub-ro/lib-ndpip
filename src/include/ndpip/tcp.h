@@ -32,7 +32,6 @@ struct ndpip_tcp_socket {
 	struct ndpip_socket socket;
 
 	struct ndpip_list_head accept_queue;
-	struct ndpip_mutex accept_queue_lock;
 	struct ndpip_tcp_socket *parent_socket;
 
 	enum ndpip_tcp_socket_state {

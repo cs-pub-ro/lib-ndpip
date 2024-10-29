@@ -6,9 +6,15 @@
 #include <stdint.h>
 #include <time.h>
 
+#include <netinet/in.h>
+
 struct ndpip_pbuf_meta {
 	uint32_t tcp_ack;
 	uint16_t data_len;
+	struct sockaddr_in remote;
+
+	struct tcphdr *th;
+	uint16_t th_hlen;
 };
 
 enum ndpip_pbuf_flag {

@@ -95,6 +95,7 @@ int ndpip_udp_connect(struct ndpip_udp_socket *udp_sock)
 void ndpip_udp_flush(struct ndpip_udp_socket *udp_sock)
 {
 	assert(ndpip_ring_push(udp_sock->socket.recv_ring, udp_sock->socket.recv_tmp, udp_sock->socket.recv_tmp_len) >= 0);
+	udp_sock->socket.feed_tmp_len = 0;
 	udp_sock->socket.recv_tmp_len = 0;
 }
 

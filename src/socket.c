@@ -21,6 +21,17 @@
 #define NDPIP_EQDS_GRANTS_OVERHEAD 60
 
 
+static int ndpip_sock_bind(struct ndpip_socket *sock, const struct sockaddr *addr);
+static int ndpip_sock_listen(struct ndpip_socket *sock);
+static int ndpip_sock_connect(struct ndpip_socket *sock, const struct sockaddr *addr);
+static int ndpip_sock_accept(struct ndpip_socket *sock, struct sockaddr *addr, socklen_t *addrlen);
+static int ndpip_sock_send(struct ndpip_socket *sock, struct ndpip_pbuf **pb, uint16_t count);
+static int ndpip_sock_prepare(struct ndpip_socket *sock, struct ndpip_pbuf *pb, uint16_t mss);
+static int ndpip_sock_setsockopt(struct ndpip_socket *sock, int optname, const void *optval, socklen_t optlen);
+static int ndpip_sock_getsockopt(struct ndpip_socket *sock, int optname, const void *optval, socklen_t optlen);
+static int ndpip_sock_close(struct ndpip_socket *sock);
+
+
 struct ndpip_hashtable *ndpip_tcp_established_sockets = NULL;
 struct ndpip_hashtable *ndpip_tcp_listening_sockets = NULL;
 
@@ -30,7 +41,8 @@ struct ndpip_hashtable *ndpip_udp_listening_sockets = NULL;
 struct ndpip_socket **socket_table = NULL;
 
 #ifdef NDPIP_GRANTS_ENABLE
-int ndpip_socket_grants_get(struct ndpip_socket *sock, uint32_t grants) {
+int ndpip_socket_grants_get(struct ndpip_socket *sock, uint32_t grants)
+{
 	struct ndpip_pbuf *pb;
 	
 	if (ndpip_sock_alloc(sock, &pb, 1, false) == 0)
@@ -113,6 +125,7 @@ struct ndpip_socket *ndpip_socket_new(int domain, int type, int protocol)
 
 	sock->rx_loop_seen = false;
 	sock->flags = 0;
+	ndpip_mutex_init(&sock->lock);
 
 	if (type & SOCK_NONBLOCK)
 		sock->flags |= O_NONBLOCK;
@@ -141,7 +154,6 @@ struct ndpip_socket *ndpip_socket_new(int domain, int type, int protocol)
 		tcp_sock->rx_mss = NDPIP_TCP_DEFAULT_MSS;
 
 		ndpip_list_init(&tcp_sock->accept_queue);
-		ndpip_mutex_init(&tcp_sock->accept_queue_lock);
 		tcp_sock->parent_socket = NULL;
 	}
 
@@ -212,9 +224,22 @@ int ndpip_bind(int sockfd, const struct sockaddr *addr, socklen_t addrlen)
 		return -1;
 	}
 
+	ndpip_mutex_lock(&sock->lock);
+	int ret = ndpip_sock_bind(sock, addr);
+	ndpip_mutex_unlock(&sock->lock);
+
+	return ret;
+}
+
+static int ndpip_sock_bind(struct ndpip_socket *sock, const struct sockaddr *addr)
+{
 	sock->local = *((struct sockaddr_in *) addr);
 	sock->iface = ndpip_iface_get_by_inaddr(sock->local.sin_addr);
+
 	sock->recv_tmp = malloc(sizeof(struct ndpip_pbuf *) * ndpip_iface_get_burst_size(sock->iface));
+	sock->feed_tmp = malloc(sizeof(struct ndpip_pbuf *) * ndpip_iface_get_burst_size(sock->iface));
+
+	sock->feed_tmp_len = 0;
 	sock->recv_tmp_len = 0;
 
 	if (sock->protocol == IPPROTO_TCP) {
@@ -251,6 +276,15 @@ int ndpip_listen(int sockfd, int backlog)
 		return -1;
 	}
 
+	ndpip_mutex_lock(&sock->lock);
+	int ret = ndpip_sock_listen(sock);
+	ndpip_mutex_unlock(&sock->lock);
+
+	return ret;
+}
+
+static int ndpip_sock_listen(struct ndpip_socket *sock)
+{
 	if (sock->protocol != IPPROTO_TCP) {
 		errno = EOPNOTSUPP;
 		return -1;
@@ -306,6 +340,15 @@ int ndpip_connect(int sockfd, const struct sockaddr *addr, socklen_t addrlen)
 		return -1;
 	}
 
+	ndpip_mutex_lock(&sock->lock);
+	int ret = ndpip_sock_connect(sock, addr);
+	ndpip_mutex_unlock(&sock->lock);
+
+	return ret;
+}
+
+static int ndpip_sock_connect(struct ndpip_socket *sock, const struct sockaddr *addr)
+{
 	sock->remote = *((struct sockaddr_in *) addr);
 
 	struct ndpip_hashtable *htable;
@@ -352,7 +395,8 @@ int ndpip_connect(int sockfd, const struct sockaddr *addr, socklen_t addrlen)
 	return -1;
 }
 
-int ndpip_accept(int sockfd, struct sockaddr *addr, socklen_t *addrlen) {
+int ndpip_accept(int sockfd, struct sockaddr *addr, socklen_t *addrlen)
+{
 	if (sockfd < 0) {
 		errno = EBADF;
 		return -1;
@@ -364,6 +408,15 @@ int ndpip_accept(int sockfd, struct sockaddr *addr, socklen_t *addrlen) {
 		return -1;
 	}
 
+	ndpip_mutex_lock(&sock->lock);
+	int ret = ndpip_sock_accept(sock, addr, addrlen);
+	ndpip_mutex_unlock(&sock->lock);
+
+	return ret;
+}
+
+static int ndpip_sock_accept(struct ndpip_socket *sock, struct sockaddr *addr, socklen_t *addrlen)
+{
 	if (sock->protocol != IPPROTO_TCP) {
 		errno = EOPNOTSUPP;
 		return -1;
@@ -393,7 +446,6 @@ int ndpip_recv(int sockfd, struct ndpip_pbuf **pb, uint16_t count)
 		errno = ENOTSOCK;
 		return -1;
 	}
-
 
 	if (count == 0) {
 		errno = EINVAL;
@@ -435,6 +487,15 @@ int ndpip_send(int sockfd, struct ndpip_pbuf **pb, uint16_t count)
 		return -1;
 	}
 
+	ndpip_mutex_lock(&sock->lock);
+	int ret = ndpip_sock_send(sock, pb, count);
+	ndpip_mutex_unlock(&sock->lock);
+
+	return ret;
+}
+
+static int ndpip_sock_send(struct ndpip_socket *sock, struct ndpip_pbuf **pb, uint16_t count)
+{
 	if (sock->protocol == IPPROTO_TCP)
 		return ndpip_tcp_send((struct ndpip_tcp_socket *) sock, pb, count);
 
@@ -445,7 +506,8 @@ int ndpip_send(int sockfd, struct ndpip_pbuf **pb, uint16_t count)
 	return -1;
 }
 
-int ndpip_free(int sockfd, struct ndpip_pbuf **pb, size_t len) {
+int ndpip_free(int sockfd, struct ndpip_pbuf **pb, size_t len)
+{
 	if (sockfd < 0) {
 		errno = EBADF;
 		return -1;
@@ -457,10 +519,15 @@ int ndpip_free(int sockfd, struct ndpip_pbuf **pb, size_t len) {
 		return -1;
 	}
 
-	return ndpip_sock_free(sock, pb, len, true);
+	ndpip_mutex_lock(&sock->lock);
+	int ret = ndpip_sock_free(sock, pb, len, true);
+	ndpip_mutex_unlock(&sock->lock);
+
+	return ret;
 }
 
-size_t ndpip_alloc(int sockfd, struct ndpip_pbuf **pb, size_t len) {
+size_t ndpip_alloc(int sockfd, struct ndpip_pbuf **pb, size_t len)
+{
 	if (sockfd < 0) {
 		errno = EBADF;
 		return -1;
@@ -475,10 +542,16 @@ size_t ndpip_alloc(int sockfd, struct ndpip_pbuf **pb, size_t len) {
 	if (len == 0)
 		return 0;
 
-	return ndpip_sock_alloc(sock, pb, len, false);
+	ndpip_mutex_lock(&sock->lock);
+	int ret = ndpip_sock_alloc(sock, pb, len, false);
+	ndpip_mutex_unlock(&sock->lock);
+
+	return ret;
 }
 
 #ifdef NDPIP_GRANTS_ENABLE
+static int ndpip_sock_cost(struct ndpip_socket *sock, struct ndpip_pbuf **pb, uint16_t len, uint16_t *pb_cost);
+
 uint16_t ndpip_socket_pbuf_cost(struct ndpip_socket *sock, struct ndpip_pbuf *pb)
 {
 	uint16_t transport_overhead = 0;
@@ -494,7 +567,8 @@ uint16_t ndpip_socket_pbuf_cost(struct ndpip_socket *sock, struct ndpip_pbuf *pb
 	return sock->grants_overhead + sizeof(struct ethhdr) + sizeof(struct iphdr) + transport_overhead + ndpip_pbuf_length(pb);
 }
 
-int ndpip_cost(int sockfd, struct ndpip_pbuf **pb, uint16_t len, uint16_t *pb_cost) {
+int ndpip_cost(int sockfd, struct ndpip_pbuf **pb, uint16_t len, uint16_t *pb_cost)
+{
 	if (sockfd < 0) {
 		errno = EBADF;
 		return -1;
@@ -506,6 +580,15 @@ int ndpip_cost(int sockfd, struct ndpip_pbuf **pb, uint16_t len, uint16_t *pb_co
 		return -1;
 	}
 
+	ndpip_mutex_lock(&sock->lock);
+	int ret = ndpip_sock_cost(sock, pb, len);
+	ndpip_mutex_unlock(&sock->lock);
+
+	return ret;
+}
+
+static int ndpip_sock_cost(struct ndpip_socket *sock, struct ndpip_pbuf **pb, uint16_t len, uint16_t *pb_cost)
+{
 	if (sock->grants_overhead < 0) {
 		errno = EINVAL;
 		return -1;
@@ -582,6 +665,11 @@ int ndpip_prepare(int sockfd, struct ndpip_pbuf *pb, uint16_t mss)
 		return -1;
 	}
 
+	return ndpip_sock_prepare(sock, pb, mss);
+}
+
+static int ndpip_sock_prepare(struct ndpip_socket *sock, struct ndpip_pbuf *pb, uint16_t mss)
+{
 	ndpip_pbuf_resize(pb, mss);
 
 	if (sock->protocol == IPPROTO_TCP)
@@ -611,6 +699,15 @@ int ndpip_setsockopt(int sockfd, int level, int optname, const void *optval, soc
 		return -1;
 	}
 
+	ndpip_mutex_lock(&sock->lock);
+	int ret = ndpip_sock_setsockopt(sock, optname, optval, optlen);
+	ndpip_mutex_unlock(&sock->lock);
+
+	return ret;
+}
+
+static int ndpip_sock_setsockopt(struct ndpip_socket *sock, int optname, const void *optval, socklen_t optlen)
+{
 	struct ndpip_tcp_socket *tcp_sock = (struct ndpip_tcp_socket *) sock;
 	int mss;
 
@@ -701,6 +798,15 @@ int ndpip_getsockopt(int sockfd, int level, int optname, const void *optval, soc
 		return -1;
 	}
 
+	ndpip_mutex_lock(&sock->lock);
+	int ret = ndpip_sock_getsockopt(sock, optname, optval, optlen);
+	ndpip_mutex_unlock(&sock->lock);
+
+	return ret;
+}
+
+static int ndpip_sock_getsockopt(struct ndpip_socket *sock, int optname, const void *optval, socklen_t optlen)
+{
 	switch (optname) {
 #ifdef NDPIP_GRANTS_ENABLE
 		case SO_NDPIP_GRANTS:
@@ -765,6 +871,15 @@ int ndpip_close(int sockfd)
 
 	socket_table[sockfd] = NULL;
 
+	ndpip_mutex_lock(&sock->lock);
+	int ret = ndpip_sock_close(sock);
+	ndpip_mutex_unlock(&sock->lock);
+
+	return ret;
+}
+
+static int ndpip_sock_close(struct ndpip_socket *sock)
+{
 	if (sock->protocol == IPPROTO_TCP)
 		return ndpip_tcp_close((struct ndpip_tcp_socket *) sock);
 
@@ -851,17 +966,22 @@ struct ndpip_socket *ndpip_socket_get_by_peer(struct sockaddr_in *local, struct 
 
 uint32_t ndpip_socket_poll(struct ndpip_socket *sock)
 {
+	uint32_t ret = 0;
+	ndpip_mutex_lock(&sock->lock);
+
 	if (sock->protocol == IPPROTO_TCP) {
 		struct ndpip_tcp_socket *tcp_sock = (void *) sock;
-		return ndpip_tcp_poll(tcp_sock);
+		ret = ndpip_tcp_poll(tcp_sock);
 	}
 
 	if (sock->protocol == IPPROTO_UDP) {
 		struct ndpip_udp_socket *udp_sock = (void *) sock;
-		return ndpip_udp_poll(udp_sock);
+		ret = ndpip_udp_poll(udp_sock);
 	}
 
-	return 0;
+	ndpip_mutex_unlock(&sock->lock);
+
+	return ret;
 }
 
 /*
