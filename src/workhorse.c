@@ -47,7 +47,7 @@ int ndpip_rx_thread(void *argp)
 
 	char iface_ethaddr[ETH_ALEN];
 	memcpy(iface_ethaddr, ndpip_iface_get_ethaddr(iface), ETH_ALEN);
-	struct ndpip_pbuf_pool *rx_pool = ndpip_iface_get_pbuf_pool_rx(iface);
+	struct ndpip_pbuf_pool *rpl_pool = ndpip_iface_get_pbuf_pool_rpl(iface);
 
 	uint64_t start = 0, burst_delay_a = 0;
 
@@ -302,9 +302,7 @@ free_pkt:
 			freed_pkts[freed_pkt_cnt++] = pb;
 		}
 
-		size_t tmp_pkt_cnt = tcp_sockets_len;
-		assert(ndpip_pbuf_pool_request(rx_pool, replies, &tmp_pkt_cnt) >= 0);
-		assert(tmp_pkt_cnt == tcp_sockets_len);
+		assert(ndpip_pbuf_pool_request(rpl_pool, replies, tcp_sockets_len) >= 0);
 
 		for (uint16_t idx = 0; idx < tcp_sockets_len; idx++) {
 			struct ndpip_tcp_socket *tcp_sock = tcp_sockets[idx];
@@ -321,6 +319,8 @@ free_pkt:
 				if (ndpip_tcp_feed(tcp_sock, &pm->remote, pb, pm->th, pm->th_hlen, pm->data_len) != 1)
 					freed_pkts[freed_pkt_cnt++] = pb;
 			}
+
+			assert(ndpip_ring_push(sock->recv_ring, sock->recv_tmp, sock->recv_tmp_len) >= 0);
 
 			int r = ndpip_tcp_flush(tcp_sock, replies[replies_len]);
 			ndpip_mutex_unlock(&sock->lock);
@@ -346,14 +346,11 @@ free_pkt:
 		if (replies_len > 0)
 			ndpip_iface_xmit(iface, replies, replies_len, true);
 
-		ndpip_pbuf_pool_release(rx_pool, freed_pkts, freed_pkt_cnt);
-		ndpip_pbuf_pool_release(rx_pool, replies + replies_len, tcp_sockets_len - replies_len);
+		ndpip_pbuf_release(replies + replies_len, tcp_sockets_len - replies_len);
 
 		for (uint16_t idx = 0; idx < udp_sockets_len; idx++) {
 			struct ndpip_udp_socket *udp_sock = udp_sockets[idx];
 			struct ndpip_socket *sock = (struct ndpip_socket *) udp_sock;
-
-			ndpip_mutex_lock(&sock->lock);
 
 			uint16_t sock_feed_tmp_len = sock->feed_tmp_len;
 			struct ndpip_pbuf **sock_feed_tmp = sock->feed_tmp;
@@ -365,11 +362,12 @@ free_pkt:
 				ndpip_udp_feed(udp_sock, &pm->remote, pb);
 			}
 
+			assert(ndpip_ring_push(sock->recv_ring, sock->recv_tmp, sock->recv_tmp_len) >= 0);
 			ndpip_udp_flush(udp_sock);
-			ndpip_mutex_unlock(&sock->lock);
-
 			sock->rx_loop_seen = false;
 		}
+
+		ndpip_pbuf_release(freed_pkts, freed_pkt_cnt);
 
 		replies_len_a += replies_len;
 		pkt_cnt_a += pkt_cnt;

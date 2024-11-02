@@ -13,6 +13,7 @@
 #include <rte_ethdev.h>
 
 #define NDPIP_TX_NB_MBUF (NDPIP_SOCKET_XMIT_RING_LENGTH + 1024)
+#define NDPIP_RPL_NB_MBUF 1024
 #define NDPIP_RX_NB_MBUF (NDPIP_SOCKET_RECV_RING_LENGTH + 1024)
 #define NDPIP_LINUX_DPDK_TX_DESC 0
 #define NDPIP_LINUX_DPDK_RX_DESC 0
@@ -28,21 +29,20 @@ static struct ndpip_linux_dpdk_iface iface = {
 static uint64_t tsc_hz;
 bool ndpip_linux_dpdk_initialized = false;
 
-int ndpip_linux_dpdk_pbuf_pool_request(struct ndpip_pbuf_pool *pool, struct ndpip_pbuf **pbs, size_t *count)
+int ndpip_linux_dpdk_pbuf_pool_request(struct ndpip_pbuf_pool *pool, struct ndpip_pbuf **pbs, size_t count)
 {
 	struct rte_mempool *p = pool->pool;
 	struct rte_mbuf **mbs = (void *) pbs;
-	size_t count_tmp = *count;
 
-	for (size_t idx = 0; idx < count_tmp;) {
-		size_t count1 = count_tmp - idx;
+	for (size_t idx = 0; idx < count;) {
+		size_t count1 = count - idx;
 		unsigned int count2 = count1 < UINT_MAX ? count1 : UINT_MAX;
-		if (rte_pktmbuf_alloc_bulk(p, mbs + idx, count2) != 0) {
-			ndpip_linux_dpdk_pbuf_pool_release(pool, pbs, idx);
+		if (rte_pktmbuf_alloc_bulk(p, mbs + idx, count2) < 0) {
+			ndpip_linux_dpdk_pbuf_release(pbs, idx);
 			return -1;
 		}
 
-		idx += count1;
+		idx += count2;
 	}
 
 	return 0;
@@ -124,6 +124,12 @@ int ndpip_linux_dpdk_register_iface(int netdev_id)
 
 	(&iface)->iface_pbuf_pool_rx.pool = rte_pktmbuf_pool_create("ndpip_pool_rx", NDPIP_RX_NB_MBUF, NDPIP_LINUX_DPDK_MEMPOOL_CACHE_SZ, NDPIP_LINUX_DPDK_MBUF_PRIVATE, NDPIP_MBUF_SIZE, rte_socket_id());
 	if ((&iface)->iface_pbuf_pool_rx.pool == NULL) {
+		perror("rte_pktmbuf_pool_create");
+		return -1;
+	}
+
+	(&iface)->iface_pbuf_pool_rpl.pool = rte_pktmbuf_pool_create("ndpip_pool_rpl", NDPIP_RPL_NB_MBUF, NDPIP_LINUX_DPDK_MEMPOOL_CACHE_SZ, NDPIP_LINUX_DPDK_MBUF_PRIVATE, NDPIP_MBUF_SIZE, rte_socket_id());
+	if ((&iface)->iface_pbuf_pool_rpl.pool == NULL) {
 		perror("rte_pktmbuf_pool_create");
 		return -1;
 	}
@@ -321,7 +327,7 @@ struct ether_addr *ndpip_linux_dpdk_iface_resolve_arp(struct ndpip_iface *iface,
         return NULL;
 }
 
-int ndpip_linux_dpdk_pbuf_pool_release(struct ndpip_pbuf_pool *pool, struct ndpip_pbuf **pbs, size_t count)
+int ndpip_linux_dpdk_pbuf_release(struct ndpip_pbuf **pbs, size_t count)
 {
         if (count == 0)                                                    
                 return 0;
@@ -330,9 +336,9 @@ int ndpip_linux_dpdk_pbuf_pool_release(struct ndpip_pbuf_pool *pool, struct ndpi
 
 	for (size_t idx = 0; idx < count;) {
 		size_t count1 = count - idx;
-		count1 = count1 < UINT_MAX ? count1 : UINT_MAX;
-		rte_pktmbuf_free_bulk(mbs + idx, count1);
-		idx += count1;
+		unsigned int count2 = count1 < UINT_MAX ? count1 : UINT_MAX;
+		rte_pktmbuf_free_bulk(mbs + idx, count2);
+		idx += count2;
 	}
 
 	return 0;

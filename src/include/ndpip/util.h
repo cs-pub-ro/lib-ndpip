@@ -26,11 +26,11 @@ struct ndpip_list_head {
 #define CN_GRANTS_GET 0
 #define CN_GRANTS_ADD 1
 
-#define ndpip_list_foreach(type, var, list_head) \
+#define ndpip_list_foreach(var, list_head) \
 	for ( \
-		type *(var) = (type *) (void *) (list_head)->next; \
-		((void *) (var)) != ((void *) list_head); \
-		(var) = (type *) (void *) ((struct ndpip_list_head *) (void *) (var))->next)
+		struct ndpip_list_head *(var) = (list_head)->next; \
+		(var) != (list_head); \
+		(var) = (var)->next)
 
 #define ndpip_ring_foreach(type, var, ring) \
 	for ( \

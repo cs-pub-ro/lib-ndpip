@@ -97,7 +97,7 @@ static int ndpip_ring_pop0(struct ndpip_ring *ring, size_t *count, struct ndpip_
 	size_t count1 = ring->ring_length - consumer;
 	if (r_count > count1) {
 		memcpy(pbs, &ring_base[consumer], sizeof(struct ndpip_pbuf *) * count1);
-		memcpy(&pbs[count1], ring_base, sizeof(struct ndpip_pbuf *) * (r_count - count1));
+		memcpy(pbs + count1, ring_base, sizeof(struct ndpip_pbuf *) * (r_count - count1));
 	} else
 		memcpy(pbs, &ring_base[consumer], sizeof(struct ndpip_pbuf *) * r_count);
 
@@ -139,22 +139,25 @@ void ndpip_list_init(struct ndpip_list_head *list)
 
 void ndpip_list_add(struct ndpip_list_head *prev, struct ndpip_list_head *element)
 {
-	element->next = prev->next;
+	struct ndpip_list_head *next = prev->next;
+
+	element->next = next;
 	element->prev = prev;
 
 	prev->next = element;
-
-	if (element->next != NULL)
-		element->next->prev = element;
+	next->prev = element;
 }
 
-void ndpip_list_del(struct ndpip_list_head *entry)
+void ndpip_list_del(struct ndpip_list_head *element)
 {
-	if (entry->prev != NULL)
-		entry->prev->next = entry->next;
+	struct ndpip_list_head *prev = element->prev;
+	struct ndpip_list_head *next = element->next;
 
-	if (entry->next != NULL)
-		entry->next->prev = entry->prev;
+	prev->next = next;
+	next->prev = prev;
+
+	element->prev = element;
+	element->next = element;
 }
 
 bool ndpip_timer_expired(struct ndpip_timer *timer)
@@ -244,7 +247,8 @@ void *ndpip_hashtable_get(struct ndpip_hashtable *hashtable, uint32_t hash)
 
 	struct ndpip_list_head *bucket = (void *) &hashtable->hashtable_buckets[hash & hashtable->hashtable_mask];
 
-	ndpip_list_foreach(struct ndpip_hlist_node, hnode, bucket) {
+	ndpip_list_foreach(e, bucket) {
+		struct ndpip_hlist_node *hnode = ((void *) e) - offsetof(struct ndpip_hlist_node, hnode_list);
 		if (hnode->hnode_hash == hash) {
 			hashtable->last_node = hnode;
 			ndpip_mutex_unlock(&hashtable->lock);
@@ -277,7 +281,8 @@ void ndpip_hashtable_del(struct ndpip_hashtable *hashtable, uint32_t hash)
 	struct ndpip_hlist_node *rmnode = NULL;
 
 	ndpip_mutex_lock(&hashtable->lock);
-	ndpip_list_foreach(struct ndpip_hlist_node, hnode, bucket) {
+	ndpip_list_foreach(e, bucket) {
+		struct ndpip_hlist_node *hnode = ((void *) e) - offsetof(struct ndpip_hlist_node, hnode_list);
 		if (hnode->hnode_hash == hash) {
 			rmnode = hnode;
 			break;

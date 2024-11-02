@@ -22,5 +22,7 @@ void ndpip_udp_prepare_send(struct ndpip_udp_socket *sock, struct ndpip_pbuf *pb
 int ndpip_udp_close(struct ndpip_udp_socket *sock);
 int ndpip_udp_connect(struct ndpip_udp_socket *udp_sock);
 uint32_t ndpip_udp_poll(struct ndpip_udp_socket *udp_sock);
+size_t ndpip_udp_can_send(struct ndpip_udp_socket *udp_sock);
+int ndpip_udp_write(struct ndpip_udp_socket *sock, struct ndpip_pbuf **pb, uint16_t cnt);
 
 #endif

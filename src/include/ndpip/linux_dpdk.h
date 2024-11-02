@@ -49,6 +49,7 @@ struct ndpip_linux_dpdk_iface {
 	pthread_t iface_timers_thread;
 
 	struct ndpip_pbuf_pool iface_pbuf_pool_rx;
+	struct ndpip_pbuf_pool iface_pbuf_pool_rpl;
 	struct ndpip_pbuf_pool iface_pbuf_pool_tx;
 
 	struct ndpip_mutex iface_tx_lock;
@@ -63,8 +64,8 @@ enum ndpip_iface_offload {
 	NDPIP_IFACE_OFFLOAD_RX_UDPV4_CSUM
 };
 
-int ndpip_linux_dpdk_pbuf_pool_request(struct ndpip_pbuf_pool *pool, struct ndpip_pbuf **pbs, size_t *count);
-int ndpip_linux_dpdk_pbuf_pool_release(struct ndpip_pbuf_pool *pool, struct ndpip_pbuf **pbs, size_t count);
+int ndpip_linux_dpdk_pbuf_pool_request(struct ndpip_pbuf_pool *pool, struct ndpip_pbuf **pbs, size_t count);
+int ndpip_linux_dpdk_pbuf_release(struct ndpip_pbuf **pbs, size_t count);
 
 int ndpip_linux_dpdk_iface_rx_burst(struct ndpip_iface *iface, struct ndpip_pbuf **pbs, uint16_t *count);
 
@@ -107,6 +108,7 @@ uint16_t ndpip_linux_dpdk_ipv4_udptcp_cksum(struct iphdr *iph, void *l4h);
 #define ndpip_iface_get_inaddr ndpip_linux_dpdk_iface_get_inaddr
 #define ndpip_iface_get_mtu ndpip_linux_dpdk_iface_get_mtu
 #define ndpip_iface_get_pbuf_pool_rx(iface) (&(((struct ndpip_linux_dpdk_iface *) (iface))->iface_pbuf_pool_rx))
+#define ndpip_iface_get_pbuf_pool_rpl(iface) (&(((struct ndpip_linux_dpdk_iface *) (iface))->iface_pbuf_pool_rpl))
 #define ndpip_iface_get_pbuf_pool_tx(iface) (&(((struct ndpip_linux_dpdk_iface *) (iface))->iface_pbuf_pool_tx))
 #define ndpip_iface_resolve_arp ndpip_linux_dpdk_iface_resolve_arp
 #define ndpip_iface_has_offload ndpip_linux_dpdk_iface_has_offload
@@ -133,7 +135,7 @@ uint16_t ndpip_linux_dpdk_ipv4_udptcp_cksum(struct iphdr *iph, void *l4h);
 
 #define ndpip_pbuf_pool_alloc ndpip_linux_dpdk_pbuf_pool_alloc
 #define ndpip_pbuf_pool_request ndpip_linux_dpdk_pbuf_pool_request
-#define ndpip_pbuf_pool_release ndpip_linux_dpdk_pbuf_pool_release
+#define ndpip_pbuf_release ndpip_linux_dpdk_pbuf_release
 
 #define ndpip_pbuf_metadata ndpip_linux_dpdk_pbuf_metadata
 #define ndpip_pbuf_has_flag ndpip_linux_dpdk_pbuf_has_flag

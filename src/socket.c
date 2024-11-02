@@ -10,10 +10,12 @@
 #include "ndpip/workhorse.h"
 
 
-#define NDPIP_TCP_DEFAULT_MSS (ETH_DATA_LEN - (sizeof(struct ether_header) + sizeof(struct iphdr) + sizeof(struct tcphdr)))
-#define NDPIP_UDP_DEFAULT_MSS (ETH_DATA_LEN - (sizeof(struct ether_header) + sizeof(struct iphdr) + sizeof(struct udphdr)))
+#define NDPIP_TCP_DEFAULT_MSS 1460
+#define NDPIP_UDP_DEFAULT_MSS 1472
 #define NDPIP_MIN_UNPRIV_PORT 1024
 #define NDPIP_MAX_LOCAL_PORT_RETRIES 1024
+
+#define NDPIP_TODO_READ_MAX_PBS (1 << 17)
 
 #define NDPIP_TODO_ESTABLISHED_SOCKETS_BUCKETS 65536
 #define NDPIP_TODO_LISTENING_SOCKETS_BUCKETS 1024
@@ -26,11 +28,15 @@ static int ndpip_sock_listen(struct ndpip_socket *sock);
 static int ndpip_sock_connect(struct ndpip_socket *sock, const struct sockaddr *addr);
 static int ndpip_sock_accept(struct ndpip_socket *sock, struct sockaddr *addr, socklen_t *addrlen);
 static int ndpip_sock_send(struct ndpip_socket *sock, struct ndpip_pbuf **pb, uint16_t count);
-static int ndpip_sock_prepare(struct ndpip_socket *sock, struct ndpip_pbuf *pb, uint16_t mss);
+static int ndpip_sock_recv(struct ndpip_socket *sock, struct ndpip_pbuf **pb, uint16_t count);
+static int ndpip_sock_write(struct ndpip_socket *sock, struct ndpip_pbuf **pb, uint16_t count);
+static ssize_t ndpip_sock_read(struct ndpip_socket *sock, void *buf, size_t count);
+static int ndpip_sock_prepare(struct ndpip_socket *sock, struct ndpip_pbuf *pb);
 static int ndpip_sock_setsockopt(struct ndpip_socket *sock, int optname, const void *optval, socklen_t optlen);
 static int ndpip_sock_getsockopt(struct ndpip_socket *sock, int optname, const void *optval, socklen_t optlen);
 static int ndpip_sock_close(struct ndpip_socket *sock);
-
+static int ndpip_sock_buf2pbuf(struct ndpip_socket *sock, void *buf, size_t len, struct ndpip_pbuf ***pb);
+static ssize_t ndpip_sock_can_send(struct ndpip_socket *sock);
 
 struct ndpip_hashtable *ndpip_tcp_established_sockets = NULL;
 struct ndpip_hashtable *ndpip_tcp_listening_sockets = NULL;
@@ -45,7 +51,7 @@ int ndpip_socket_grants_get(struct ndpip_socket *sock, uint32_t grants)
 {
 	struct ndpip_pbuf *pb;
 	
-	if (ndpip_sock_alloc(sock, &pb, 1, false) == 0)
+	if (ndpip_sock_alloc(sock, &pb, 1, false) < 0)
 		return -1;
 
 	assert(ndpip_pbuf_offset(pb, sizeof(struct ethhdr) + sizeof(struct eqds_cn)) >= 0);
@@ -125,10 +131,11 @@ struct ndpip_socket *ndpip_socket_new(int domain, int type, int protocol)
 
 	sock->rx_loop_seen = false;
 	sock->flags = 0;
-	ndpip_mutex_init(&sock->lock);
 
 	if (type & SOCK_NONBLOCK)
 		sock->flags |= O_NONBLOCK;
+
+	ndpip_mutex_init(&sock->lock);
 
 	if (protocol == IPPROTO_TCP) {
 		sock->tx_mss = NDPIP_TCP_DEFAULT_MSS;
@@ -452,6 +459,13 @@ int ndpip_recv(int sockfd, struct ndpip_pbuf **pb, uint16_t count)
 		return -1;
 	}
 
+	int ret = ndpip_sock_recv(sock, pb, count);
+
+	return ret;
+}
+
+static int ndpip_sock_recv(struct ndpip_socket *sock, struct ndpip_pbuf **pb, uint16_t count)
+{
 	size_t rcount = count;
 	if (ndpip_ring_pop(sock->recv_ring, &rcount, pb) < 0) {
 		errno = EAGAIN;
@@ -467,6 +481,196 @@ int ndpip_recv(int sockfd, struct ndpip_pbuf **pb, uint16_t count)
 	}
 	
 	return rcount;
+}
+
+static ssize_t ndpip_sock_can_send(struct ndpip_socket *sock)
+{
+	if (sock->protocol == IPPROTO_TCP)
+		return ndpip_tcp_can_send((struct ndpip_tcp_socket *) sock);
+
+	if (sock->protocol == IPPROTO_UDP)
+		return ndpip_udp_can_send((struct ndpip_udp_socket *) sock);
+
+	errno = EOPNOTSUPP;
+	return -1;
+}
+
+ssize_t ndpip_write(int sockfd, void *buf, size_t len)
+{
+	if (sockfd < 0) {
+		errno = EBADF;
+		return -1;
+	}
+
+	struct ndpip_socket *sock = ndpip_socket_get(sockfd);
+	if (sock == NULL) {
+		errno = ENOTSOCK;
+		return -1;
+	}
+
+	if (len == 0) {
+		errno = EINVAL;
+		return -1;
+	}
+
+	if (buf == NULL) {
+		printf("%d: EFAULT\n", __LINE__);
+		errno = EFAULT;
+		return -1;
+	}
+
+	ssize_t can_send = ndpip_sock_can_send(sock);
+	if (can_send < 0)
+		return -1;
+
+	len = len < can_send ? len : can_send;
+	if (len == 0)
+		return 0;
+
+	struct ndpip_pbuf **pbs;
+	int count = ndpip_sock_buf2pbuf(sock, buf, len, &pbs);
+	if (count < 0)
+		return -1;
+
+	ssize_t ret = ndpip_sock_write(sock, pbs, count);
+	if (ret < 0)
+		goto ret;
+
+	ret = len;
+
+ret:
+	free(pbs);
+	return ret;
+}
+
+static int ndpip_sock_write(struct ndpip_socket *sock, struct ndpip_pbuf **pb, uint16_t count)
+{
+	if (sock->protocol == IPPROTO_TCP)
+		return ndpip_tcp_write((struct ndpip_tcp_socket *) sock, pb, count);
+
+	if (sock->protocol == IPPROTO_UDP)
+		return ndpip_udp_write((struct ndpip_udp_socket *) sock, pb, count);
+
+	errno = EOPNOTSUPP;
+	return -1;
+}
+
+static int ndpip_sock_buf2pbuf(struct ndpip_socket *sock, void *buf, size_t len, struct ndpip_pbuf ***pbs_ret)
+{
+	uint16_t tx_mss = sock->tx_mss;
+	size_t count = len / tx_mss;
+	size_t len2 = count * tx_mss;
+	uint16_t remainder = 0;
+	if (len2 < len) {
+		count++;
+		remainder = len - len2;
+	}
+
+	if (count == 0) {
+		errno = EINVAL;
+		return -1;
+	}
+
+	struct ndpip_pbuf **pbs = malloc(count * sizeof(struct ndpip_pbuf *));
+	if (pbs == NULL)
+		return -1;
+
+	int r = ndpip_sock_alloc(sock, pbs, count, false);
+	if (r < 0) {
+		free(pbs);
+		return -1;
+	}
+
+	for (size_t idx = 0; idx < count - 1; idx++) {
+		ndpip_pbuf_resize(pbs[idx], tx_mss);
+		memcpy(ndpip_pbuf_data(pbs[idx]), buf, tx_mss);
+		ndpip_sock_prepare(sock, pbs[idx]);
+		buf += tx_mss;
+	}
+
+	if (remainder == 0) {
+		ndpip_pbuf_resize(pbs[count - 1], tx_mss);
+		memcpy(ndpip_pbuf_data(pbs[count - 1]), buf, tx_mss);
+		ndpip_sock_prepare(sock, pbs[count - 1]);
+	} else {
+		ndpip_pbuf_resize(pbs[count -1], tx_mss);
+		memcpy(ndpip_pbuf_data(pbs[count - 1]), buf, remainder);
+		ndpip_sock_prepare(sock, pbs[count - 1]);
+	}
+
+	*pbs_ret = pbs;
+	return count;
+}
+
+ssize_t ndpip_read(int sockfd, void *buf, size_t len)
+{
+	if (sockfd < 0) {
+		errno = EBADF;
+		return -1;
+	}
+
+	struct ndpip_socket *sock = ndpip_socket_get(sockfd);
+	if (sock == NULL) {
+		errno = ENOTSOCK;
+		return -1;
+	}
+
+	if (len == 0) {
+		errno = EINVAL;
+		return -1;
+	}
+
+	if (buf == NULL) {
+		errno = EFAULT;
+		return -1;
+	}
+
+	return ndpip_sock_read(sock, buf, len);
+}
+
+ssize_t ndpip_sock_read(struct ndpip_socket *sock, void *buf, size_t len)
+{
+	size_t count = ndpip_ring_size(sock->recv_ring);
+                
+	if ((count == 0) && (sock->protocol == IPPROTO_TCP)) {
+		struct ndpip_tcp_socket *tcp_sock = (struct ndpip_tcp_socket *) sock;
+                        
+		if (tcp_sock->state != CONNECTED) {
+			errno = EINVAL;
+			return -1;
+		}
+	}
+
+	struct ndpip_pbuf **pbs = malloc(count * sizeof(struct ndpip_pbuf *));
+	ndpip_ring_peek(sock->recv_ring, &count, pbs);
+
+	ssize_t ret = 0;
+	size_t idx = 0;
+	for (; idx < count; idx++) {
+		struct ndpip_pbuf *pb = pbs[idx];
+		uint16_t data_len = ndpip_pbuf_length(pb);
+
+		if ((ret + data_len) > len) {
+			uint16_t remainder = len - ret;
+			memcpy(buf + ret, ndpip_pbuf_data(pb), remainder);
+			assert(ndpip_pbuf_offset(pb, -remainder) >= 0);
+			ret += remainder;
+		} else {
+			memcpy(buf + ret, ndpip_pbuf_data(pb), data_len);
+			ret += data_len;
+		}
+
+		if (ret == len)
+			break;
+
+		assert(ret < len);
+	}
+
+	ndpip_ring_flush(sock->recv_ring, idx);
+	ndpip_sock_free(sock, pbs, idx);
+	free(pbs);
+
+	return ret;
 }
 
 int ndpip_send(int sockfd, struct ndpip_pbuf **pb, uint16_t count)
@@ -487,9 +691,7 @@ int ndpip_send(int sockfd, struct ndpip_pbuf **pb, uint16_t count)
 		return -1;
 	}
 
-	ndpip_mutex_lock(&sock->lock);
 	int ret = ndpip_sock_send(sock, pb, count);
-	ndpip_mutex_unlock(&sock->lock);
 
 	return ret;
 }
@@ -519,11 +721,7 @@ int ndpip_free(int sockfd, struct ndpip_pbuf **pb, size_t len)
 		return -1;
 	}
 
-	ndpip_mutex_lock(&sock->lock);
-	int ret = ndpip_sock_free(sock, pb, len, true);
-	ndpip_mutex_unlock(&sock->lock);
-
-	return ret;
+	return ndpip_sock_free(sock, pb, len);
 }
 
 size_t ndpip_alloc(int sockfd, struct ndpip_pbuf **pb, size_t len)
@@ -542,9 +740,7 @@ size_t ndpip_alloc(int sockfd, struct ndpip_pbuf **pb, size_t len)
 	if (len == 0)
 		return 0;
 
-	ndpip_mutex_lock(&sock->lock);
 	int ret = ndpip_sock_alloc(sock, pb, len, false);
-	ndpip_mutex_unlock(&sock->lock);
 
 	return ret;
 }
@@ -580,9 +776,7 @@ int ndpip_cost(int sockfd, struct ndpip_pbuf **pb, uint16_t len, uint16_t *pb_co
 		return -1;
 	}
 
-	ndpip_mutex_lock(&sock->lock);
 	int ret = ndpip_sock_cost(sock, pb, len);
-	ndpip_mutex_unlock(&sock->lock);
 
 	return ret;
 }
@@ -602,24 +796,13 @@ static int ndpip_sock_cost(struct ndpip_socket *sock, struct ndpip_pbuf **pb, ui
 }
 #endif
 
-int ndpip_sock_free(struct ndpip_socket *sock, struct ndpip_pbuf **pb, size_t len, bool rx)
+int ndpip_sock_free(struct ndpip_socket *sock, struct ndpip_pbuf **pb, size_t len)
 {
-	struct ndpip_pbuf_pool *pool = NULL;
-	
 	if (len == 0)
 		return 0;
 
-	if (rx)
-		pool = ndpip_iface_get_pbuf_pool_rx(sock->iface);
-	else
-		pool = ndpip_iface_get_pbuf_pool_tx(sock->iface);
-
-	if (pool == NULL) {
-		errno = EFAULT;
-		return -1;
-	}
-
-	if (ndpip_pbuf_pool_release(pool, pb, len) < 0) {
+	if (ndpip_pbuf_release(pb, len) < 0) {
+		printf("%d: EFAULT\n", __LINE__);
 		errno = EFAULT;
 		return -1;
 	}
@@ -627,7 +810,7 @@ int ndpip_sock_free(struct ndpip_socket *sock, struct ndpip_pbuf **pb, size_t le
 	return 0;
 }
 
-size_t ndpip_sock_alloc(struct ndpip_socket *sock, struct ndpip_pbuf **pb, size_t len, bool rx)
+ssize_t ndpip_sock_alloc(struct ndpip_socket *sock, struct ndpip_pbuf **pb, size_t len, bool rx)
 {
 	struct ndpip_pbuf_pool *pool = NULL;
 	
@@ -641,18 +824,15 @@ size_t ndpip_sock_alloc(struct ndpip_socket *sock, struct ndpip_pbuf **pb, size_
 		return -1;
 	}
 
-	if (ndpip_pbuf_pool_request(pool, pb, &len) < 0) {
-		errno = EFAULT;
-		return 0;
-	}
-
-	if (!rx) {
+	if (ndpip_pbuf_pool_request(pool, pb, len) < 0) {
+		errno = ENOMEM;
+		return -1;
 	}
 
 	return len;
 }
 
-int ndpip_prepare(int sockfd, struct ndpip_pbuf *pb, uint16_t mss)
+int ndpip_prepare(int sockfd, struct ndpip_pbuf *pb)
 {
 	if (sockfd < 0) {
 		errno = EBADF;
@@ -665,13 +845,11 @@ int ndpip_prepare(int sockfd, struct ndpip_pbuf *pb, uint16_t mss)
 		return -1;
 	}
 
-	return ndpip_sock_prepare(sock, pb, mss);
+	return ndpip_sock_prepare(sock, pb);
 }
 
-static int ndpip_sock_prepare(struct ndpip_socket *sock, struct ndpip_pbuf *pb, uint16_t mss)
+static int ndpip_sock_prepare(struct ndpip_socket *sock, struct ndpip_pbuf *pb)
 {
-	ndpip_pbuf_resize(pb, mss);
-
 	if (sock->protocol == IPPROTO_TCP)
 		ndpip_tcp_prepare_send((struct ndpip_tcp_socket *) sock, pb);
 
@@ -741,8 +919,8 @@ static int ndpip_sock_setsockopt(struct ndpip_socket *sock, int optname, const v
 			mss = *(int *) optval;
 
 			if ((mss <= 0) ||
-				((mss >= NDPIP_TCP_DEFAULT_MSS) && sock->protocol == IPPROTO_TCP) ||
-				((mss >= NDPIP_UDP_DEFAULT_MSS) && sock->protocol == IPPROTO_UDP)) {
+				((mss > NDPIP_TCP_DEFAULT_MSS) && sock->protocol == IPPROTO_TCP) ||
+				((mss > NDPIP_UDP_DEFAULT_MSS) && sock->protocol == IPPROTO_UDP)) {
 
 				errno = EINVAL;
 				return -1;
@@ -765,7 +943,7 @@ static int ndpip_sock_setsockopt(struct ndpip_socket *sock, int optname, const v
 
 			mss = *(int *) optval;
 
-			if ((mss <= 0) || (mss >= NDPIP_TCP_DEFAULT_MSS)) {
+			if ((mss <= 0) || (mss > NDPIP_TCP_DEFAULT_MSS)) {
 				errno = EINVAL;
 				return -1;
 			}
@@ -967,7 +1145,6 @@ struct ndpip_socket *ndpip_socket_get_by_peer(struct sockaddr_in *local, struct 
 uint32_t ndpip_socket_poll(struct ndpip_socket *sock)
 {
 	uint32_t ret = 0;
-	ndpip_mutex_lock(&sock->lock);
 
 	if (sock->protocol == IPPROTO_TCP) {
 		struct ndpip_tcp_socket *tcp_sock = (void *) sock;
@@ -978,8 +1155,6 @@ uint32_t ndpip_socket_poll(struct ndpip_socket *sock)
 		struct ndpip_udp_socket *udp_sock = (void *) sock;
 		ret = ndpip_udp_poll(udp_sock);
 	}
-
-	ndpip_mutex_unlock(&sock->lock);
 
 	return ret;
 }

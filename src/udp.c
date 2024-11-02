@@ -94,7 +94,6 @@ int ndpip_udp_connect(struct ndpip_udp_socket *udp_sock)
 
 void ndpip_udp_flush(struct ndpip_udp_socket *udp_sock)
 {
-	assert(ndpip_ring_push(udp_sock->socket.recv_ring, udp_sock->socket.recv_tmp, udp_sock->socket.recv_tmp_len) >= 0);
 	udp_sock->socket.feed_tmp_len = 0;
 	udp_sock->socket.recv_tmp_len = 0;
 }
@@ -149,6 +148,13 @@ void ndpip_udp_prepare_send(struct ndpip_udp_socket *udp_sock, struct ndpip_pbuf
 #endif
 }
 
+int ndpip_udp_write(struct ndpip_udp_socket *udp_sock, struct ndpip_pbuf **pb, uint16_t cnt)
+{
+	struct ndpip_socket *sock = &udp_sock->socket;
+	ndpip_iface_xmit(sock->iface, pb, cnt, true);
+	return 0;
+}
+
 int ndpip_udp_send(struct ndpip_udp_socket *udp_sock, struct ndpip_pbuf **pb, uint16_t cnt)
 {
 	struct ndpip_socket *sock = &udp_sock->socket;
@@ -199,3 +205,10 @@ static void ndpip_udp_prepare_pbuf(struct ndpip_udp_socket *udp_sock, struct ndp
 	*/
 }
 #endif
+
+size_t ndpip_udp_can_send(struct ndpip_udp_socket *udp_sock)
+{
+	uint16_t burst_size = ndpip_iface_get_burst_size(udp_sock->socket.iface);
+	struct ndpip_socket *sock = &udp_sock->socket;
+	return burst_size * sock->tx_mss;
+}
