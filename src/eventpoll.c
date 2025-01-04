@@ -122,7 +122,7 @@ int ndpip_epoll_ctl(int epfd, int op, int fd, struct epoll_event *event)
 
 int ndpip_epoll_wait(int epfd, struct epoll_event *events, int maxevents, int timeout)
 {
-	if (epfd > NDPIP_TODO_MAX_EPOLLFDS) {
+	if ((epfd < 0) || (epfd > NDPIP_TODO_MAX_EPOLLFDS)) {
 		errno = EBADF;
 		return -1;
 	}

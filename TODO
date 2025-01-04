@@ -9,4 +9,3 @@ TODO: On the RX side when receiving smaller that MSS segments move them to a mal
       Another potential solution, and perhaps the asiest would be to place locks on socket processing, both on the worker and application threads.
 
 TODO: Presently packets are delivered to the received socket once per burst, this has the greatest performance gain when there is only one CONNECTED socket and worst when packets from "burst" sockets are received in one burst. A solution would be to deliver packets to the socket once a pad buffer is full, say 64 packets, or on the expiration of a timer. The performance increase is due to the fact that ndpip_ring_push_one is very slow, while ndpip_ring_push is faster.
-TODO: implement write and read API's according to BSD.
