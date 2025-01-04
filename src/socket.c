@@ -82,7 +82,7 @@ int ndpip_socket_grants_get(struct ndpip_socket *sock, uint32_t grants)
 
 static struct ndpip_socket *ndpip_socket_get(int sockfd)
 {
-	if (sockfd < NDPIP_TODO_MAX_FDS)
+	if ((sockfd >= 0) && (sockfd < NDPIP_TODO_MAX_FDS))
 		return socket_table[sockfd];
 
 	return NULL;
@@ -304,26 +304,15 @@ static int ndpip_sock_listen(struct ndpip_socket *sock)
 		return -1;
 	}
 
-	for (size_t idx = 0; idx < NDPIP_TODO_MAX_FDS; idx++) {
-		if (socket_table[idx] == NULL)
-			continue;
-
-		struct ndpip_socket *csock = socket_table[idx];
-
-		if (csock == sock)
-			continue;
-
-		if ((memcmp(&csock->local, &sock->local, sizeof(struct sockaddr_in)) == 0) &&
-			(csock->protocol == sock->protocol)) {
-
-			errno = EADDRINUSE;
-			return -1;
-		}
+	uint32_t hash = ndpip_socket_listening_hash(&sock->local);
+	struct ndpip_socket *csock = ndpip_hashtable_get(ndpip_tcp_listening_sockets, hash);
+	if ((csock != NULL) && (csock != sock)) {
+		errno = EADDRINUSE;
+		return -1;
 	}
 
 	tcp_sock->state = LISTENING;
 
-	uint32_t hash = ndpip_socket_listening_hash(&sock->local);
 	ndpip_hashtable_put(ndpip_tcp_listening_sockets, hash, sock);
 
 	return 0;
