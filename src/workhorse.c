@@ -320,8 +320,6 @@ free_pkt:
 					freed_pkts[freed_pkt_cnt++] = pb;
 			}
 
-			assert(ndpip_ring_push(sock->recv_ring, sock->recv_tmp, sock->recv_tmp_len) >= 0);
-
 			int r = ndpip_tcp_flush(tcp_sock, replies[replies_len]);
 			ndpip_mutex_unlock(&sock->lock);
 
@@ -339,8 +337,6 @@ free_pkt:
 				*/
 #endif
 			}
-
-			sock->rx_loop_seen = false;
 		}
 
 		if (replies_len > 0)
@@ -362,9 +358,7 @@ free_pkt:
 				ndpip_udp_feed(udp_sock, &pm->remote, pb);
 			}
 
-			assert(ndpip_ring_push(sock->recv_ring, sock->recv_tmp, sock->recv_tmp_len) >= 0);
 			ndpip_udp_flush(udp_sock);
-			sock->rx_loop_seen = false;
 		}
 
 		ndpip_pbuf_release(freed_pkts, freed_pkt_cnt);

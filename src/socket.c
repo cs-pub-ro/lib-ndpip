@@ -149,6 +149,7 @@ struct ndpip_socket *ndpip_socket_new(int domain, int type, int protocol)
 
 		tcp_sock->tcp_seq = 0;
 		tcp_sock->tcp_ack = 0;
+		tcp_sock->tcp_ack_inc = 0;
 		tcp_sock->tcp_recv_win = 0;
 		tcp_sock->tcp_max_seq = 0;
 		tcp_sock->tcp_last_ack = 0;

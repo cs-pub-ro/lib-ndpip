@@ -58,6 +58,7 @@ struct ndpip_tcp_socket {
 
 	uint32_t tcp_seq;
 	uint32_t tcp_ack;
+	uint32_t tcp_ack_inc;
 	uint32_t tcp_last_ack;
 
 	uint32_t tcp_recv_win;

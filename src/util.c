@@ -65,7 +65,7 @@ int ndpip_ring_push(struct ndpip_ring *ring, struct ndpip_pbuf **pbs, size_t cou
 
 	ring->ring_end += count;
 
-	return 0;
+	return count;
 }
 
 size_t ndpip_ring_free(struct ndpip_ring *ring)

@@ -94,8 +94,14 @@ int ndpip_udp_connect(struct ndpip_udp_socket *udp_sock)
 
 void ndpip_udp_flush(struct ndpip_udp_socket *udp_sock)
 {
+	struct ndpip_socket *sock = &udp_sock->socket;
+
+	ndpip_ring_push(sock->recv_ring, sock->recv_tmp, sock->recv_tmp_len);
+
 	udp_sock->socket.feed_tmp_len = 0;
 	udp_sock->socket.recv_tmp_len = 0;
+
+	sock->rx_loop_seen = false;
 }
 
 void ndpip_udp_feed(struct ndpip_udp_socket *udp_sock, struct sockaddr_in *remote, struct ndpip_pbuf *pb)

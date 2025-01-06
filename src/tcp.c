@@ -524,7 +524,8 @@ int ndpip_tcp_write(struct ndpip_tcp_socket *tcp_sock, struct ndpip_pbuf **pbs, 
 	}
 
 	tcp_sock->tcp_seq = tcp_seq;
-	assert(ndpip_ring_push(sock->xmit_ring, pbs, count) >= 0);
+	while (ndpip_ring_push(sock->xmit_ring, pbs, count) < 0)
+		ndpip_usleep(1);
 
 	if (!ndpip_timer_armed(tcp_sock->timer_rto))
 		ndpip_timer_arm_after(tcp_sock->timer_rto, &NDPIP_TODO_TCP_RETRANSMIT_TIMEOUT);
@@ -663,7 +664,8 @@ int ndpip_tcp_send(struct ndpip_tcp_socket *tcp_sock, struct ndpip_pbuf **pb, ui
 
 	if (idx > 0) {
 		tcp_sock->tcp_seq = tcp_seq;
-		assert(ndpip_ring_push(xmit_ring, pb, idx) >= 0);
+		while (ndpip_ring_push(xmit_ring, pb, idx) < 0)
+			ndpip_usleep(1);
 
 		if (!ndpip_timer_armed(tcp_sock->timer_rto))
 			ndpip_timer_arm_after(tcp_sock->timer_rto, &NDPIP_TODO_TCP_RETRANSMIT_TIMEOUT);
@@ -836,8 +838,18 @@ int ndpip_tcp_flush(struct ndpip_tcp_socket *tcp_sock, struct ndpip_pbuf *rpb)
 
 	ndpip_tcp_free_acked(tcp_sock);
 
+	struct ndpip_socket *sock = &tcp_sock->socket;
+
+	if (ndpip_ring_push(sock->recv_ring, sock->recv_tmp, sock->recv_tmp_len) >= 0) {
+		tcp_sock->tcp_rsp_ack = true;
+		tcp_sock->tcp_ack += tcp_sock->tcp_ack_inc;
+	}
+
+	tcp_sock->tcp_ack_inc = 0;
 	tcp_sock->socket.recv_tmp_len = 0;
 	tcp_sock->socket.feed_tmp_len = 0;
+
+	sock->rx_loop_seen = false;
 
 	if (tcp_sock->tcp_rsp_ack) {
 		ndpip_tcp_build_meta(tcp_sock, TH_ACK, rpb);
@@ -906,7 +918,7 @@ int ndpip_tcp_feed(struct ndpip_tcp_socket *tcp_sock, struct sockaddr_in *remote
 	} else
 		ack_inc = data_len;
 
-	tcp_sock->tcp_ack = tcp_seq + ack_inc;
+	tcp_sock->tcp_ack_inc += ack_inc;
 
 	if (tcp_state == LISTENING) {
 		if (th_flags != TH_SYN)
@@ -944,6 +956,7 @@ int ndpip_tcp_feed(struct ndpip_tcp_socket *tcp_sock, struct sockaddr_in *remote
 		}
 
 		tcp_asock->tcp_ack = tcp_sock->tcp_ack;
+		tcp_asock->tcp_ack_inc = 0;
 		tcp_asock->parent_socket = tcp_sock;
 
 		uint32_t hash = ndpip_socket_established_hash(&asock->local, &asock->remote);
@@ -1026,8 +1039,6 @@ int ndpip_tcp_feed(struct ndpip_tcp_socket *tcp_sock, struct sockaddr_in *remote
 
 			return 0;
 		}
-
-		tcp_sock->tcp_rsp_ack = true;
 
 		sock->recv_tmp[sock->recv_tmp_len++] = pb;
 
